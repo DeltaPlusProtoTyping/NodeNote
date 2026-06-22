@@ -59,8 +59,18 @@ compose.desktop {
             // GitHub Actions release workflow builds each on its matching runner.
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "NodeNote"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
 
+            windows {
+                // jpackage/MSI can't show a "create a shortcut?" prompt or auto-launch
+                // after install, so we just always create the shortcuts and install
+                // per-user (no UAC prompt; shortcut lands on the current user's Desktop).
+                shortcut = true      // Desktop shortcut
+                menu = true          // Start Menu entry
+                perUserInstall = true
+                dirChooser = true    // let the user pick the install folder in the wizard
+                upgradeUuid = "8f0d6d3e-2b6b-4f3a-9b2a-2d8e6a1c4f57"
+            }
             linux {
                 // Debian package ids are lowercase by convention; jpackage wants a maintainer.
                 packageName = "nodenote"
