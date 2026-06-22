@@ -54,9 +54,10 @@ compose.desktop {
         mainClass = "com.nodenote.MainKt"
 
         nativeDistributions {
-            // Msi = Windows installer, Deb = Debian/Ubuntu/Mint installer.
-            // Each is only buildable on its own OS (jpackage targets the host OS).
-            targetFormats(TargetFormat.Msi, TargetFormat.Deb)
+            // Msi = Windows installer, Deb = Debian/Ubuntu/Mint installer, Dmg = macOS.
+            // Each is only buildable on its own OS (jpackage targets the host OS), so the
+            // GitHub Actions release workflow builds each on its matching runner.
+            targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "NodeNote"
             packageVersion = "1.0.0"
 
@@ -64,6 +65,9 @@ compose.desktop {
                 // Debian package ids are lowercase by convention; jpackage wants a maintainer.
                 packageName = "nodenote"
                 debMaintainer = "benpauza@gmail.com"
+            }
+            macOS {
+                bundleID = "com.nodenote.app"
             }
         }
     }
