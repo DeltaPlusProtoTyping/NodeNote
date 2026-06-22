@@ -2,14 +2,20 @@ package com.nodenote.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -17,6 +23,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -50,8 +57,11 @@ import com.nodenote.model.edgeType
 import com.nodenote.state.AppState
 import com.nodenote.theme.Accent
 import com.nodenote.theme.CanvasBackground
+import com.nodenote.theme.PanelBackground
 import com.nodenote.theme.PanelBackgroundRaised
+import com.nodenote.theme.PanelBorder
 import com.nodenote.theme.TextFaint
+import com.nodenote.theme.TextPrimary
 import com.nodenote.theme.TextSecondary
 import com.nodenote.theme.ThemeState
 import com.nodenote.theme.color
@@ -372,13 +382,40 @@ private fun DrawScope.drawArrowHead(color: Color, start: Offset, end: Offset, si
 
 @Composable
 private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Empty canvas", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary)
-        Spacer(Modifier.height(4.dp))
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(PanelBackground.copy(alpha = 0.65f))
+            .border(1.dp, PanelBorder, RoundedCornerShape(16.dp))
+            .padding(horizontal = 30.dp, vertical = 26.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(16.dp).background(Accent, RoundedCornerShape(5.dp)))
+            Spacer(Modifier.width(10.dp))
+            Text("NodeNote", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        }
+        Spacer(Modifier.height(5.dp))
+        Text("Map a system — drop nodes, connect them, annotate.", fontSize = 12.sp, color = TextSecondary)
+        Spacer(Modifier.height(20.dp))
+        EmptyHintRow("Add", "+ Add Node, or double-click the canvas")
+        EmptyHintRow("Navigate", "middle-drag to pan · scroll to zoom")
+        EmptyHintRow("Connect", "hover a node, drag its blue port to another")
+        EmptyHintRow("Open", "Open Recent, or pick a file in the explorer")
+    }
+}
+
+@Composable
+private fun EmptyHintRow(label: String, detail: String) {
+    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "Add a node from the toolbar, or open a project from the file explorer",
-            fontSize = 12.sp,
+            label.uppercase(),
+            fontSize = 9.sp,
+            letterSpacing = 0.8.sp,
+            fontWeight = FontWeight.SemiBold,
             color = TextFaint,
+            modifier = Modifier.width(78.dp),
         )
+        Text(detail, fontSize = 11.sp, color = TextSecondary)
     }
 }

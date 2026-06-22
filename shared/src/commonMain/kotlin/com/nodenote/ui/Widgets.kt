@@ -3,6 +3,9 @@ package com.nodenote.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -163,11 +166,15 @@ fun ToolbarButton(
 /** Compact bordered button for panel actions (Material buttons are too tall for tight panel rows). */
 @Composable
 fun CompactOutlinedButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
     Box(
         modifier
             .height(26.dp)
             .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, PanelBorder, RoundedCornerShape(6.dp))
+            .background(if (hovered) PanelBackgroundRaised else Color.Transparent)
+            .border(1.dp, if (hovered) Accent.copy(alpha = 0.6f) else PanelBorder, RoundedCornerShape(6.dp))
+            .hoverable(interaction)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -178,15 +185,19 @@ fun CompactOutlinedButton(text: String, onClick: () -> Unit, modifier: Modifier 
 /** Tiny square button, used for the zoom +/- controls. */
 @Composable
 fun SmallIconButton(text: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
     Box(
         Modifier
             .size(26.dp)
             .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, PanelBorder, RoundedCornerShape(6.dp))
+            .background(if (hovered) PanelBackgroundRaised else Color.Transparent)
+            .border(1.dp, if (hovered) Accent.copy(alpha = 0.6f) else PanelBorder, RoundedCornerShape(6.dp))
+            .hoverable(interaction)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 13.sp, color = TextSecondary)
+        Text(text, fontSize = 13.sp, color = if (hovered) TextPrimary else TextSecondary)
     }
 }
 
