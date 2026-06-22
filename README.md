@@ -7,6 +7,18 @@ images, and save the whole project as human-readable JSON.
 
 ![Stack](https://img.shields.io/badge/Kotlin-Compose%20Multiplatform-blue)
 
+## Download
+
+Prebuilt installers are on the **[Releases page](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/latest)** — no build tools or Java required, the runtime is bundled:
+
+| Platform | File |
+|---|---|
+| Windows | `NodeNote-<version>.msi` |
+| macOS (Apple Silicon) | `NodeNote-<version>.dmg` |
+| Linux (Debian/Ubuntu/Mint) | `nodenote_<version>_amd64.deb` |
+
+The installers are unsigned, so on first launch you'll see a one-time prompt: Windows SmartScreen → **More info → Run anyway**; macOS → right-click the app → **Open**.
+
 ## Running the desktop app (Windows)
 
 Requirements: JDK 17+ (the Gradle wrapper downloads everything else).
