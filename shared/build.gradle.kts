@@ -1,0 +1,70 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
+plugins {
+    kotlin("multiplatform")
+    kotlin("plugin.serialization")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.compose")
+}
+
+kotlin {
+    jvmToolchain(17)
+
+    // ProjectStorage uses an expect/actual object; this opts in to that (stable in practice, formally Beta).
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
+    // Windows / desktop target (run with: gradlew :shared:run)
+    jvm("desktop")
+
+    // iOS targets. These are configured here so the module is ready for an iOS app,
+    // but they can only be compiled on a macOS host with Xcode installed.
+    listOf(
+        iosX64(),
+        iosArm64(),
+        iosSimulatorArm64(),
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "shared"
+            isStatic = true
+        }
+    }
+
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material3)
+                implementation(compose.ui)
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+            }
+        }
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.desktop.currentOs)
+            }
+        }
+    }
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.nodenote.MainKt"
+
+        nativeDistributions {
+            // Msi = Windows installer, Deb = Debian/Ubuntu/Mint installer.
+            // Each is only buildable on its own OS (jpackage targets the host OS).
+            targetFormats(TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "NodeNote"
+            packageVersion = "1.0.0"
+
+            linux {
+                // Debian package ids are lowercase by convention; jpackage wants a maintainer.
+                packageName = "nodenote"
+                debMaintainer = "benpauza@gmail.com"
+            }
+        }
+    }
+}

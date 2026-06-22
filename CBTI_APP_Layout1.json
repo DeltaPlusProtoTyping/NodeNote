@@ -1,0 +1,170 @@
+{
+    "id": "7bbaa10f66a8b1ce",
+    "name": "Untitled Project",
+    "nodes": [
+        {
+            "id": "81720cc178f014bd",
+            "type": "Device",
+            "title": "Phone App",
+            "description": "Storage / Display / Interaction",
+            "x": 338.0,
+            "y": 364.0,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        },
+        {
+            "id": "d443ab72a07a2bfb",
+            "type": "System",
+            "title": "Journel",
+            "description": "Store conversations",
+            "x": 235.78815,
+            "y": 180.26086,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        },
+        {
+            "id": "6d2d809f05c6c423",
+            "type": "System",
+            "title": "Therapist",
+            "description": "AI API - Data / Voice",
+            "x": 492.38586,
+            "y": 182.0,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        },
+        {
+            "id": "a285a7671d93d8a2",
+            "type": "System",
+            "title": "user input",
+            "description": "Voice to Text / Text\n",
+            "x": -24.211952,
+            "y": 180.26086,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        },
+        {
+            "id": "e761f6acfe9376c7",
+            "type": "System",
+            "title": "Health Metrics",
+            "description": "Blood work / Whoop / ect\n",
+            "x": 650.0,
+            "y": 364.0,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        },
+        {
+            "id": "b9fa125a095de269",
+            "type": "System",
+            "title": "User Conversation",
+            "description": "Voice\n",
+            "x": 728.0,
+            "y": 182.0,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        },
+        {
+            "id": "3470473d53d0b257",
+            "type": "System",
+            "title": "AI API ",
+            "description": "Questions / Analyze / Voice\n",
+            "x": 492.81903,
+            "y": 15.594704,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        },
+        {
+            "id": "3b67eeffabbd2e23",
+            "type": "TestResult",
+            "title": "Outputs",
+            "description": "Notifications / Medical Exports",
+            "x": 339.30823,
+            "y": 525.74786,
+            "width": 190.0,
+            "height": 92.0,
+            "properties": {},
+            "attachments": []
+        }
+    ],
+    "edges": [
+        {
+            "id": "582a0e64919446c9",
+            "fromNodeId": "a285a7671d93d8a2",
+            "toNodeId": "d443ab72a07a2bfb",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "9a06d127311a5686",
+            "fromNodeId": "d443ab72a07a2bfb",
+            "toNodeId": "6d2d809f05c6c423",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "c99a521e04bf704d",
+            "fromNodeId": "e761f6acfe9376c7",
+            "toNodeId": "6d2d809f05c6c423",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "aac34db88fd8ca64",
+            "fromNodeId": "d443ab72a07a2bfb",
+            "toNodeId": "81720cc178f014bd",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "5048baf3ad79bfc7",
+            "fromNodeId": "6d2d809f05c6c423",
+            "toNodeId": "81720cc178f014bd",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "a1a90ddba664efd3",
+            "fromNodeId": "e761f6acfe9376c7",
+            "toNodeId": "81720cc178f014bd",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "b9877cbb5ff5ac0d",
+            "fromNodeId": "b9fa125a095de269",
+            "toNodeId": "6d2d809f05c6c423",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "4fffce7f6946f99f",
+            "fromNodeId": "3470473d53d0b257",
+            "toNodeId": "6d2d809f05c6c423",
+            "label": "",
+            "type": "Data"
+        },
+        {
+            "id": "45282de7a9045434",
+            "fromNodeId": "81720cc178f014bd",
+            "toNodeId": "3b67eeffabbd2e23",
+            "label": "",
+            "type": "Data"
+        }
+    ],
+    "elements": [],
+    "customNodeTypes": [],
+    "customEdgeTypes": []
+}

@@ -1,0 +1,14 @@
+.gradle/
+build/
+*/build/
+.idea/
+.kotlin/
+local.properties
+*.log
+
+# Claude Code session/memory data — not part of the project
+.claude/
+
+# OS / IDE noise
+.DS_Store
+*.iml
