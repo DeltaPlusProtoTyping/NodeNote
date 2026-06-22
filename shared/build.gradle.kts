@@ -59,7 +59,7 @@ compose.desktop {
             // GitHub Actions release workflow builds each on its matching runner.
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "NodeNote"
-            packageVersion = "1.0.1"
+            packageVersion = "1.0.2"
 
             windows {
                 // jpackage/MSI can't show a "create a shortcut?" prompt or auto-launch

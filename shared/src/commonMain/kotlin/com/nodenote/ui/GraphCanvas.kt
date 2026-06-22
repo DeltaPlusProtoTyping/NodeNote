@@ -100,7 +100,9 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             .focusable()
             // Left-drag on empty canvas: box-selection marquee for mouse, camera
             // pan for touch (iOS). Mouse panning is middle-drag, handled below.
-            .pointerInput(Unit) {
+            // Keyed on [state]: switching/opening a tab swaps the AppState instance,
+            // and the handler must rebind to the one actually being rendered.
+            .pointerInput(state) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
@@ -117,7 +119,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             }
             // Tap on empty canvas: clear selection / abort a pending connection.
             // Double-tap on empty canvas: quick-add a node of the last-used type.
-            .pointerInput(Unit) {
+            .pointerInput(state) {
                 detectTapGestures(
                     onTap = {
                         state.clearSelection()
@@ -132,7 +134,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             // Runs in the Initial pass (parent sees events before children) so a
             // middle-button drag pans the canvas even when it starts on top of a
             // node — consuming the move cancels the node's own drag detector.
-            .pointerInput(Unit) {
+            .pointerInput(state) {
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)

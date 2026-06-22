@@ -31,6 +31,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -197,6 +198,9 @@ fun SmallIconButton(text: String, onClick: () -> Unit) {
 @Composable
 fun VerticalResizeHandle(onDragDp: (Float) -> Unit) {
     val density = LocalDensity.current.density
+    // The callback is bound to the focused tab; keep the latest one without
+    // restarting the (stable) pointerInput, so resizing follows tab switches.
+    val currentOnDrag by rememberUpdatedState(onDragDp)
     var active by remember { mutableStateOf(false) }
     Box(
         Modifier
@@ -217,7 +221,7 @@ fun VerticalResizeHandle(onDragDp: (Float) -> Unit) {
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    onDragDp(dragAmount.x / density)
+                    currentOnDrag(dragAmount.x / density)
                 }
             },
         contentAlignment = Alignment.Center,
@@ -230,6 +234,7 @@ fun VerticalResizeHandle(onDragDp: (Float) -> Unit) {
 @Composable
 fun HorizontalResizeHandle(onDragDp: (Float) -> Unit) {
     val density = LocalDensity.current.density
+    val currentOnDrag by rememberUpdatedState(onDragDp)
     var active by remember { mutableStateOf(false) }
     Box(
         Modifier
@@ -250,7 +255,7 @@ fun HorizontalResizeHandle(onDragDp: (Float) -> Unit) {
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    onDragDp(dragAmount.y / density)
+                    currentOnDrag(dragAmount.y / density)
                 }
             },
         contentAlignment = Alignment.Center,

@@ -87,7 +87,8 @@ fun ElementView(element: CanvasElement, state: AppState) {
                 },
                 shape = shape,
             )
-            .pointerInput(element.id) {
+            // Keyed on [state] too so the handler rebinds if the rendered document changes.
+            .pointerInput(state, element.id) {
                 detectTapGestures(
                     onTap = { state.nodeTapped(element.id) },
                     onDoubleTap = {
@@ -98,7 +99,7 @@ fun ElementView(element: CanvasElement, state: AppState) {
                     },
                 )
             }
-            .pointerInput(element.id) {
+            .pointerInput(state, element.id) {
                 detectDragGestures(
                     onDragStart = {
                         state.pushUndo()

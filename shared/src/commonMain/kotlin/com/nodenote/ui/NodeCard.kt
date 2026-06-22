@@ -102,7 +102,9 @@ fun NodeCard(node: Node, state: AppState) {
             )
             // Tap: select, or complete a pending connection (see AppState.nodeTapped).
             // Double-tap: edit the title inline.
-            .pointerInput(node.id) {
+            // Keyed on [state] too: a different tab can reuse the same node id, so
+            // the handler must rebind to the document actually being rendered.
+            .pointerInput(state, node.id) {
                 detectTapGestures(
                     onTap = { state.nodeTapped(node.id) },
                     onDoubleTap = {
@@ -114,7 +116,7 @@ fun NodeCard(node: Node, state: AppState) {
             // Drag: move the whole selection (dragging an unselected card first
             // makes it the selection). The drag delta arrives in the card's local
             // (pre-zoom) pixels, so dividing by density converts it to world units.
-            .pointerInput(node.id) {
+            .pointerInput(state, node.id) {
                 detectDragGestures(
                     onDragStart = {
                         state.pushUndo() // one undo step per drag gesture
@@ -189,7 +191,7 @@ fun NodeCard(node: Node, state: AppState) {
                     CircleShape,
                 )
                 .border(1.dp, PanelBackgroundRaised, CircleShape)
-                .pointerInput(node.id) {
+                .pointerInput(state, node.id) {
                     detectDragGestures(
                         onDragStart = { state.startConnection(node.id) },
                         onDrag = { change, _ -> change.consume() }, // pointerPos is tracked by the canvas
