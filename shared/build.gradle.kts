@@ -69,7 +69,7 @@ compose.desktop {
                 menu = true          // Start Menu entry
                 perUserInstall = true
                 dirChooser = true    // let the user pick the install folder in the wizard
-                upgradeUuid = "8f0d6d3e-2b6b-4f3a-9b2a-2d8e6a1c4f57"
+                upgradeUuid = "ea9ab37e-fc40-4600-85e2-a809fc7e14c0"
             }
             linux {
                 // Debian package ids are lowercase by convention; jpackage wants a maintainer.
