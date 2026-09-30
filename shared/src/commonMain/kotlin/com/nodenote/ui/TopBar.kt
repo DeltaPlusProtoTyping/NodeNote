@@ -3,6 +3,8 @@ package com.nodenote.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,14 +42,16 @@ import com.nodenote.model.Attachment
 import com.nodenote.model.NodeCategory
 import com.nodenote.model.NodeTypeDef
 import com.nodenote.state.AppState
+import com.nodenote.state.ConnectionState
 import com.nodenote.state.Workspace
-import com.nodenote.storage.ProjectActions
 import com.nodenote.storage.ProjectStorage
 import com.nodenote.storage.decodeImageOrNull
 import com.nodenote.theme.AppThemeOption
 import com.nodenote.theme.ThemeState
 import com.nodenote.theme.Accent
 import com.nodenote.theme.DangerRed
+import com.nodenote.theme.SuccessGreen
+import com.nodenote.theme.WarnAmber
 import com.nodenote.theme.PanelBackground
 import com.nodenote.theme.PanelBorder
 import com.nodenote.theme.TextFaint
@@ -58,53 +62,55 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.roundToInt
 
-/** Main toolbar: project actions, insert/edit actions, zoom controls. Operates on the workspace's focused tab. */
+/** Main toolbar: board actions, insert/edit actions, who/where, zoom controls. Operates on the workspace's focused tab. */
 @Composable
 fun TopBar(workspace: Workspace) {
     val state = workspace.focused
+    val loaded = state.isLoaded
     Row(
         Modifier.fillMaxWidth().height(46.dp).background(PanelBackground).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // App mark
-        Box(Modifier.size(10.dp).background(Accent, RoundedCornerShape(3.dp)))
-        Spacer(Modifier.width(8.dp))
-        Text("NodeNote", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        // Actions scroll sideways in a narrow browser window; status + view controls stay pinned right.
+        Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            // App mark
+            Box(Modifier.size(10.dp).background(Accent, RoundedCornerShape(3.dp)))
+            Spacer(Modifier.width(8.dp))
+            Text("NodeNote", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
 
-        ToolbarDivider()
+            ToolbarDivider()
 
-        ToolbarButton("New", onClick = { workspace.newTab() })
-        ToolbarButton("Open File", onClick = { workspace.openViaDialog() })
-        OpenRecentButton(workspace)
-        ToolbarButton("Save", onClick = { ProjectActions.save(state) })
-        ToolbarButton("Save As", onClick = { ProjectActions.saveAs(state) })
-        ToolbarButton("Compare", onClick = { ProjectActions.compare(state) })
-        ToolbarButton("Export", onClick = { state.openExportDialog() })
+            ToolbarButton("+ Board", onClick = { workspace.newBoardOpen = true })
+            ToolbarButton("Import", onClick = { workspace.importBoardFromFile() })
+            ExportMenuButton(workspace, enabled = loaded)
 
-        ToolbarDivider()
+            ToolbarDivider()
 
-        AddNodeButton(state)
-        Spacer(Modifier.width(4.dp))
-        InsertButton(state)
-        ToolbarButton(
-            "Align",
-            onClick = { state.alignSelected() },
-            enabled = state.selectedNodeIds.isNotEmpty(),
-        )
-        ToolbarButton(
-            "Delete",
-            onClick = { state.deleteSelected() },
-            enabled = state.selectedNodeIds.isNotEmpty(),
-            color = DangerRed,
-        )
+            AddNodeButton(state, enabled = loaded)
+            Spacer(Modifier.width(4.dp))
+            InsertButton(state, enabled = loaded)
+            ToolbarButton(
+                "Align",
+                onClick = { state.alignSelected() },
+                enabled = state.selectedNodeIds.isNotEmpty(),
+            )
+            ToolbarButton(
+                "Delete",
+                onClick = { state.deleteSelected() },
+                enabled = state.selectedNodeIds.isNotEmpty(),
+                color = DangerRed,
+            )
 
-        ToolbarDivider()
+            ToolbarDivider()
 
-        ToolbarButton("Undo", onClick = { state.undo() }, enabled = state.canUndo, color = TextSecondary)
-        ToolbarButton("Redo", onClick = { state.redo() }, enabled = state.canRedo, color = TextSecondary)
+            ToolbarButton("Undo", onClick = { state.undo() }, enabled = state.canUndo, color = TextSecondary)
+            ToolbarButton("Redo", onClick = { state.redo() }, enabled = state.canRedo, color = TextSecondary)
+            Spacer(Modifier.width(16.dp))
+        }
 
-        Spacer(Modifier.weight(1f))
-
+        ConnectionIndicator(workspace)
+        Spacer(Modifier.width(6.dp))
+        UserButton(workspace)
         ThemeMenuButton()
         ToolbarDivider()
 
@@ -120,7 +126,6 @@ fun TopBar(workspace: Workspace) {
         SmallIconButton("+", onClick = { state.zoomIn() })
         Spacer(Modifier.width(4.dp))
         ToolbarButton("Fit", onClick = { state.zoomToFit() }, color = TextSecondary)
-        ToolbarButton("Reset", onClick = { state.resetView() }, color = TextSecondary)
         Spacer(Modifier.width(4.dp))
         SmallIconButton("?", onClick = { state.shortcutsOpen = true })
     }
@@ -133,46 +138,65 @@ private fun ToolbarDivider() {
     Spacer(Modifier.width(10.dp))
 }
 
-/** Dropdown of recently opened/saved project files. Opens the chosen file in a new tab. */
+/** Export ▾ — the board as .json (backup / hand-off) or an image. */
 @Composable
-private fun OpenRecentButton(workspace: Workspace) {
-    val state = workspace.focused
+private fun ExportMenuButton(workspace: Workspace, enabled: Boolean) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
-        ToolbarButton("Open Recent", onClick = {
-            state.loadRecentsIfNeeded()
-            menuOpen = true
-        })
+        ToolbarButton("Export", onClick = { menuOpen = true }, enabled = enabled, dropdown = true)
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            if (state.recentFiles.isEmpty()) {
-                DropdownMenuItem(
-                    text = { Text("No recent files", fontSize = 12.sp, color = TextFaint) },
-                    onClick = { menuOpen = false },
-                )
-            }
-            state.recentFiles.forEach { path ->
-                val fileName = path.substringAfterLast('\\').substringAfterLast('/')
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(fileName, fontSize = 12.sp, color = TextPrimary)
-                            Text(
-                                path,
-                                fontSize = 9.sp,
-                                color = TextFaint,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 340.dp),
-                            )
-                        }
-                    },
-                    onClick = {
-                        menuOpen = false
-                        workspace.openFileInNewTab(path)
-                    },
-                )
-            }
+            DropdownMenuItem(
+                text = { Text("Board as .json", fontSize = 12.sp) },
+                onClick = { menuOpen = false; workspace.exportFocusedBoard() },
+            )
+            DropdownMenuItem(
+                text = { Text("Image (PNG)…", fontSize = 12.sp) },
+                onClick = { menuOpen = false; workspace.focused.openExportDialog() },
+            )
         }
+    }
+}
+
+/** Green/amber/red dot + label for the server connection; click opens settings. */
+@Composable
+private fun ConnectionIndicator(workspace: Workspace) {
+    val session = workspace.session
+    val color = when (session.connection) {
+        ConnectionState.Online -> SuccessGreen
+        ConnectionState.Connecting -> WarnAmber
+        ConnectionState.Offline -> DangerRed
+    }
+    Row(
+        Modifier.clip(RoundedCornerShape(6.dp)).clickable { workspace.settingsOpen = true }.padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).background(color, RoundedCornerShape(4.dp)))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (session.connection == ConnectionState.Online) workspace.focused.syncStatus.label.takeIf { workspace.focused.isLoaded } ?: "Online"
+            else session.connection.label,
+            fontSize = 11.sp,
+            color = TextSecondary,
+        )
+    }
+}
+
+/** Who I am (the name on my messages). Opens settings. */
+@Composable
+private fun UserButton(workspace: Workspace) {
+    val name = workspace.session.userName
+    Row(
+        Modifier.clip(RoundedCornerShape(6.dp)).clickable { workspace.settingsOpen = true }.padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(20.dp).clip(RoundedCornerShape(10.dp)).background(if (name.isBlank()) PanelBorder else authorColor(name)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(name.take(1).uppercase().ifBlank { "?" }, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(name.ifBlank { "Set your name" }, fontSize = 12.sp, color = if (name.isBlank()) Accent else TextPrimary)
     }
 }
 
@@ -181,7 +205,7 @@ private fun OpenRecentButton(workspace: Workspace) {
 private fun ThemeMenuButton() {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
-        ToolbarButton("Theme: ${ThemeState.option.label}", onClick = { menuOpen = true }, color = TextSecondary)
+        ToolbarButton(ThemeState.option.label, onClick = { menuOpen = true }, color = TextSecondary, dropdown = true)
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             AppThemeOption.entries.forEach { opt ->
                 DropdownMenuItem(
@@ -208,11 +232,12 @@ private fun ThemeMenuButton() {
  * "New type…" to create a custom one and add a node of it.
  */
 @Composable
-private fun AddNodeButton(state: AppState) {
+private fun AddNodeButton(state: AppState, enabled: Boolean) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
         FilledTonalButton(
             onClick = { menuOpen = true },
+            enabled = enabled,
             modifier = Modifier.height(28.dp),
             shape = RoundedCornerShape(6.dp),
             contentPadding = PaddingValues(horizontal = 12.dp),
@@ -233,7 +258,7 @@ private fun AddNodeButton(state: AppState) {
                 HorizontalDivider(color = PanelBorder)
             }
 
-            // One column per non-empty category, in enum order.
+            // One column per non-empty category, in enum order (legacy NodeNote types aren't offered).
             Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 NodeCategory.entries.forEach { category ->
                     val items = byCategory[category].orEmpty()
@@ -307,10 +332,10 @@ private fun RecentTypeChip(def: NodeTypeDef, onClick: () -> Unit) {
 
 /** "Insert" menu for non-node canvas elements: text blocks and images. */
 @Composable
-private fun InsertButton(state: AppState) {
+private fun InsertButton(state: AppState, enabled: Boolean) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
-        ToolbarButton("Insert ▾", onClick = { menuOpen = true })
+        ToolbarButton("Insert", onClick = { menuOpen = true }, enabled = enabled, dropdown = true)
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
                 text = { Text("Text block", fontSize = 12.sp) },
@@ -332,19 +357,20 @@ private fun InsertButton(state: AppState) {
 
 @OptIn(ExperimentalEncodingApi::class)
 private fun insertImage(state: AppState) {
-    val picked = ProjectStorage.pickAttachmentFile()
-    if (picked == null) {
-        state.status = "Insert cancelled"
-        return
+    ProjectStorage.pickFile("image/*") { picked ->
+        if (picked == null) {
+            state.status = "Insert cancelled"
+            return@pickFile
+        }
+        if (picked.bytes.size > Attachment.MAX_EMBED_BYTES) {
+            state.status = "Image too large to embed (max 25 MB)"
+            return@pickFile
+        }
+        val bitmap = decodeImageOrNull(picked.bytes)
+        if (bitmap == null) {
+            state.status = "${picked.name} is not a decodable image"
+            return@pickFile
+        }
+        state.addImageElement(picked.name, Base64.encode(picked.bytes), bitmap.width, bitmap.height)
     }
-    if (picked.bytes.size > Attachment.MAX_EMBED_BYTES) {
-        state.status = "Image too large to embed (max 25 MB)"
-        return
-    }
-    val bitmap = decodeImageOrNull(picked.bytes)
-    if (bitmap == null) {
-        state.status = "${picked.name} is not a decodable image"
-        return
-    }
-    state.addImageElement(picked.name, Base64.encode(picked.bytes), bitmap.width, bitmap.height)
 }

@@ -1,135 +1,162 @@
-<div align="center">
+# NodeNote — braindump boards for process improvement
 
-# NodeNote
+A shared, node-based workspace for two efficiency engineers at a machine shop. Map the shop
+(machines, processes, quoting, customers, problems) as a graph of **nodes**; every node has its
+own **chat**. Dump what you know, rate the **key details 1–10**, track **issues and improvements**
+from *Open* to *Solved*, and have everything mirrored into an **Obsidian vault** as linked notes.
 
-**A node-based system & process documentation suite — build, document, edit, compare, and share diagrams.**
-Built with Kotlin + Compose Multiplatform for Windows, macOS, and Linux.
+Runs as a **desktop app** (Windows/macOS/Linux) and in any **browser** — both talk to one small
+server you host on your own PC and reach over **Tailscale**.
 
-![Kotlin](https://img.shields.io/badge/Kotlin-Compose%20Multiplatform-7F52FF?logo=kotlin&logoColor=white)
-![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux-2f6fed)
-![Release](https://img.shields.io/github/v/release/DeltaPlusProtoTyping/NodeNote?include_prereleases&label=download)
+```
+ desktop app ──┐                                    ┌─► SQLite (source of truth)
+               ├── HTTPS (tailscale serve) ─► server├─► Obsidian vault (generated notes)
+ browser app ──┘   REST + long-poll sync            └─► serves the browser app
+```
 
-<img src="docs/images/hero.png" width="920" alt="NodeNote editing a system diagram" />
+## How it's organized
 
-</div>
-
-Place nodes on an infinite dot-grid canvas, connect them with typed connections, annotate with text
-and images, and save everything as one human-readable JSON file. NodeNote works for **physical systems**
-(devices, PCBs, RF paths, power rails), **software architecture** (services, APIs, databases, queues),
-**human-data flows** (surveys, forms, interviews), and **media production** (clips, scripts, timelines) —
-plus any **custom types** you define.
-
-## Download
-
-Prebuilt installers are on the **[Releases page](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/latest)** — no build tools or Java needed, the runtime is bundled:
-
-| Platform | File |
+| Concept | What it is |
 |---|---|
-| Windows | `NodeNote-<version>.msi` |
-| macOS (Apple Silicon) | `NodeNote-<version>.dmg` |
-| Linux (Debian / Ubuntu / Mint) | `nodenote_<version>_amd64.deb` |
+| **Board** | One map of related topics — *Shop floor*, *Estimating*, *Q4 improvements*. Listed on the left. |
+| **Node** | A topic on the board: Issue, Improvement, Idea, Decision, Action Item, Machine, Process, Tooling, Customer, Quote… Has a **status** (Open → In progress → Blocked → Solved / Parked), **importance** 1–10, **owner**, and a **summary** of where it stands. |
+| **Chat** | Select a node → its thread opens on the right. Messages have a **kind** (Note, Issue, Idea, Decision, Action, Fix) and an optional **importance 1–10**. Actions get a done checkbox. |
+| **Links across nodes** | Type `[[` in a message to link another node. The message then also shows in that node's chat ("mentioned in"), and the link is clickable. |
+| **Inbox / braindump** | Post with nothing selected and it lands in the board inbox. Later: *Move to node…* or *Make a node from this*. |
+| **Board feed** | Nothing selected = every message on the board, tagged with its node; filter by importance (5+/7+/9+), kind, or text. |
+| **Key details** | Everything rated at/above a threshold for a node or the whole board, most important first; *Copy as list* for emails, reports, or an AI prompt. |
+| **Unread** | Nodes, the Chat tab, and the node list show what the other person posted since you last looked. |
 
-Installers are unsigned, so on first launch you'll see a one-time prompt: Windows SmartScreen → **More info → Run anyway**; macOS → right-click the app → **Open**.
+Edits sync live: both people can move nodes and chat at the same time; changes merge per node.
+Undo/redo still works locally.
 
-## Screenshots
-
-<div align="center">
-
-**Light theme**
-<img src="docs/images/light.png" width="900" alt="NodeNote in the light theme" />
-
-**Split view (two projects side by side, dark theme)**
-<img src="docs/images/split.png" width="900" alt="NodeNote split view with per-pane tabs" />
-
-</div>
-
-## Features
-
-**🗂️ Workspace**
-- **File explorer** — browse folders and open projects; opening a project points the explorer at its folder.
-- **Tabs** — multiple projects open at once; switch, close, and see a `•` on tabs with unsaved changes.
-- **Split view** — single / stacked / side-by-side, with an independent canvas and its own tab strip per pane.
-
-**🧩 Nodes & connections**
-- ~30 built-in **node types** grouped into columns — General, Hardware, Software, Data, Input, Video, Infrastructure, External — plus **custom types** you create (name + color), saved with the project.
-- **Typed connections** (Power, Data, Signal, API Call, Event, Response, Sequence, …) shown as a colored node at each edge's midpoint, with optional labels. Custom connection types too.
-- **Recently used types** float to the top of every type menu.
-- Drag from a node's edge port to another node to connect, or use *Start connection*.
-
-**📝 Document**
-- Inspector for title, type, description, free-form key/value properties, and per-connection type/label.
-- **Attachments** — embed images, files, and text snippets per node (self-contained in the JSON).
-- **Canvas elements** — free-floating text blocks and images via *Insert*.
-- Bottom **notes panel** for longer notes on the selected node.
-
-**✏️ Edit**
-- Multi-select (Ctrl+click, box-select), group drag, **Align** to grid, **Duplicate**, copy/cut/paste.
-- **Undo / redo** (up to 50 steps), inline rename, arrow-key nudge.
-
-**🎭 Themes** — **Dark**, **Night**, and **Light**, applied app-wide; your choice is remembered.
-
-**📤 Export & share** — a PNG export studio with live preview: crop (view / all / selection), 1–3× resolution, dark/light render theme, transparent or solid background, a draggable legend and title block, and saved presets. Or **copy straight to the clipboard**.
-
-**🔍 Compare** — diff the open project against any file: nodes/connections added, removed, or changed (read-only; the open project is never touched).
-
-## Keyboard shortcuts
-
-| Action | Shortcut |
-|---|---|
-| Save | `Ctrl+S` |
-| Undo / Redo | `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`) |
-| Copy / Cut / Paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
-| Duplicate / Select all | `Ctrl+D` / `Ctrl+A` |
-| Delete selection | `Delete` |
-| Nudge selection | Arrow keys (`Shift` = one grid step) |
-| Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
-| Pan canvas | Middle-mouse drag |
-| Add node at cursor | Double-click empty canvas |
-| Shortcut cheat sheet | `F1` |
-
-## Build & run from source
+## Running it
 
 Requirements: **JDK 17+** (the Gradle wrapper fetches everything else).
 
+### 1. The server (on the always-on PC)
+
 ```bash
-./gradlew :shared:run                 # run the desktop app
-./gradlew :shared:createDistributable # portable app folder (bundled runtime)
-./gradlew :shared:packageMsi          # Windows installer  (.deb / .dmg on Linux / macOS)
+./gradlew :shared:wasmJsBrowserDistribution     # build the browser app (once per update)
+./gradlew :server:run --args="--vault 'C:/path/to/Obsidian/Vault/NodeNote'"
 ```
 
-Releases are built automatically: pushing a `v*` tag runs a GitHub Actions workflow
-(`.github/workflows/release.yml`) that builds the `.msi`, `.dmg`, and `.deb` on Windows, macOS,
-and Linux runners and attaches them to a Release.
+| Flag | Env var | Default |
+|---|---|---|
+| `--port` | `NODENOTE_PORT` | `8870` |
+| `--host` | `NODENOTE_HOST` | `127.0.0.1` (only Tailscale / this PC can reach it) |
+| `--data` | `NODENOTE_DATA` | `~/.nodenote-server` (SQLite database) |
+| `--vault` | `NODENOTE_VAULT` | `~/Documents/NodeNote Vault` |
+| `--web` | `NODENOTE_WEB` | `shared/build/dist/wasmJs/productionExecutable` if built |
+
+For a self-contained install: `./gradlew :server:installDist -PwithWeb` →
+`server/build/install/server/bin/server(.bat)`.
+
+### 2. Share it over Tailscale
+
+```bash
+tailscale serve --bg 8870
+```
+
+Everyone on the tailnet can now open `https://<pc-name>.<tailnet>.ts.net` in a browser (phone
+layout included). Tailscale also tells the server who is connecting, which pre-fills your name.
+
+### 3. The desktop app
+
+```bash
+./gradlew :shared:run                 # run it
+./gradlew :shared:packageMsi          # Windows installer (.deb / .dmg on Linux / macOS)
+```
+
+On first launch it asks for your name; the server address (Settings, top-right) defaults to
+`http://localhost:8870` — use the `https://….ts.net` address on other machines.
+
+### 4. Accounts
+
+Everyone signs in with a username and password. Change either one in **Settings** (click your
+name, top-right). A rename also updates the author on your past messages and nodes. Admin
+commands, run against the database (`--data` defaults to `~/.nodenote-server`):
+
+```bash
+server users                         # list accounts
+server adduser <name> <password>     # create one
+server passwd <name> <new password>  # reset a forgotten password (signs them out everywhere)
+```
+
+(`server` = `server/build/install/server/bin/server`, or `java -cp "lib/*" com.nodenote.server.MainKt`
+inside `Apps
+odenote-server`.) Passwords are stored as salted PBKDF2 hashes. Sessions last 60 days
+of inactivity. Failed sign-ins are throttled (5 per username per 15 minutes).
+
+### 5. Public access (Tailscale Funnel)
+
+```bash
+tailscale funnel --bg --https=10000 --set-path=/nodenote http://127.0.0.1:8870
+```
+
+This publishes the app at `https://master.impala-bass.ts.net:10000/nodenote/` for anyone with an
+account; no Tailscale is needed on their side. Turn it off with
+`tailscale funnel --https=10000 --set-path=/nodenote off`.
+
+## The Obsidian vault
+
+Generated by the server, a second or two after each change — **don't hand-edit** these notes;
+change things in the app. Every note carries `nodenote: generated` in its frontmatter.
+
+```
+<vault>/Boards.md                   index of all boards
+<vault>/<Board>/<Board>.md          open work table, all nodes by type, key details, recent activity
+<vault>/<Board>/<Node title>.md     frontmatter (type, status, importance, owner, counts, tags),
+                                    summary, connections, key details, action items, the full chat
+                                    (each message has a ^block id), and "mentioned in"
+<vault>/<Board>/Inbox.md            unfiled braindumps
+```
+
+Frontmatter makes the notes queryable with Obsidian Bases/Dataview (e.g. every open Issue with
+importance ≥ 7 across boards).
+
+## Your data survives updates
+
+- **The data lives outside the app.** Boards and chats are in `~/.nodenote-server/nodenote.db`
+  (SQLite). Rebuilding or redeploying the app never touches that folder.
+- **Automatic backups.** A full copy goes to `~/.nodenote-server/backups/` every time the server
+  starts (so before any new build reads the data) and every 24 h after that. The newest 30 are
+  kept. To restore, stop the server and copy a backup over `nodenote.db`.
+- **Board history.** Before an edit changes a board, its previous state is saved, at most once
+  every 30 minutes.
+- **Versioned database.** Schema changes run as numbered migrations. An older build refuses to
+  open a database written by a newer one, so it can't damage it.
+- **Format tests.** `core` has golden samples of today's saved JSON. The build fails if a change
+  would stop old boards or messages from loading.
+
+## Keyboard
+
+| Action | Shortcut |
+|---|---|
+| Send message / new line | `Enter` / `Shift+Enter` |
+| Link a node in a message | `[[` then pick |
+| Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
+| Copy / Cut / Paste / Duplicate | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+D` |
+| Delete selection | `Delete` |
+| Pan / zoom | middle- or right-drag / mouse wheel |
+| Add node | double-click empty canvas |
+| Cheat sheet | `F1` |
 
 ## Project structure
 
 ```
-shared/src/commonMain/kotlin/com/nodenote/
-  App.kt                 # shared entry point
-  model/                 # Project / Node / Edge / type catalog — @Serializable data classes
-  state/
-    AppState.kt          # one open document: project, canvas, selection, undo, dialogs
-    Workspace.kt         # multi-document: tabs, file explorer, split layout
-  ui/                    # MainScreen, TopBar, TabBar, FileExplorer, GraphCanvas, NodeCard,
-                         # InspectorPanel, Export/Compare/Shortcuts/NewType dialogs, Widgets
-  storage/               # JSON serializer + ProjectStorage (expect) + PNG/clipboard/presets
-  theme/AppTheme.kt      # Dark / Night / Light palettes + per-type colors
-shared/src/desktopMain/  # main.kt window + desktop actuals (file dialogs, PNG, clipboard)
-shared/src/iosMain/      # MainViewController + iOS actuals
+core/     models (Project = board, Node, Edge, Message), BoardPatch diff/merge, wire DTOs (api/)
+shared/   Compose UI — desktop (JVM) and browser (Kotlin/Wasm) from one codebase
+  state/    Session (server + identity), Workspace (tabs, boards), AppState (one board),
+            BoardSync (push/long-poll/rebase)
+  ui/       MainScreen, BoardsPanel, GraphCanvas, NodeCard, RightPanel, ChatView, DetailsView,
+            CompactLayout (phones), dialogs
+  net/      ApiClient (Ktor client)
+server/   Ktor + SQLite: REST API, long-poll sync, Obsidian writer, static web app
 ```
 
-The canvas transform is `screen = world * (zoom * density) + pan`; node positions are stored in
-density-independent world units, so projects lay out identically across displays and platforms.
+## Next up
 
-## Roadmap
-
-- Node resize handles on the canvas (width/height are already in the model).
-- Confirm-on-discard when closing a tab with unsaved changes.
-- Edit edge label/type directly on the canvas midpoint node.
-- SVG export; side-by-side visual diff in Compare.
-- iOS app project (Xcode) + document picker — the `shared` module already targets iOS.
-
-## Tech notes
-
-- Minimal dependencies: Compose Multiplatform + kotlinx.serialization. No DB, no DI framework.
-- Projects are plain, diff-friendly JSON; custom types and embedded media travel inside the file.
+- AI summaries: fill each node's **Summary** (and a board digest) from its thread and key details.
+- Photos in chat (shop-floor pictures of parts, setups, faults).
+- Search across all boards.

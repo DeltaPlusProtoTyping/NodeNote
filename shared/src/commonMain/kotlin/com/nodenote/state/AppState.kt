@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
+import com.nodenote.api.MessageUpdate
 import com.nodenote.model.Attachment
 import com.nodenote.model.BuiltinTypes
 import com.nodenote.model.CanvasElement
@@ -14,15 +15,22 @@ import com.nodenote.model.EdgeTypeDef
 import com.nodenote.model.ElementKind
 import com.nodenote.model.ExportPreset
 import com.nodenote.model.ExportSettings
+import com.nodenote.model.Message
+import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
+import com.nodenote.model.NodeLinkRegex
+import com.nodenote.model.NodeStatus
 import com.nodenote.model.NodeTypeDef
 import com.nodenote.model.Project
-import com.nodenote.model.ProjectDiff
+import com.nodenote.model.clampImportance
 import com.nodenote.model.edgeType
 import com.nodenote.model.newId
 import com.nodenote.model.nodeType
+import com.nodenote.model.nowMillis
+import com.nodenote.model.rebase
+import com.nodenote.model.resolveNodeLinks
+import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.PresetStore
-import com.nodenote.storage.RecentStore
 import com.nodenote.storage.RecentTypeStore
 import kotlin.math.max
 import kotlin.math.min
@@ -42,16 +50,16 @@ val LocalAppState = compositionLocalOf<AppState?> { null }
  * immutability also gives us undo/redo for free: the undo stack is just a list
  * of previous Project snapshots.
  */
-class AppState {
+class AppState(val session: Session) {
 
     /** Stable id for this open document, used by the [com.nodenote.state.Workspace] tab bar. */
     val tabId: String = newId()
 
-    /** Short title for the tab: the file name (or project name), with a • when there are unsaved changes. */
+    /** Short title for the tab: the board name, with a • while edits are still being sent. */
     val tabTitle: String
         get() {
-            val base = currentFilePath?.substringAfterLast('\\')?.substringAfterLast('/')
-                ?: project.name.ifBlank { "Untitled" }
+            if (boardId == null) return "Home"
+            val base = project.name.ifBlank { "Untitled" }
             return if (dirty) "$base •" else base
         }
 
@@ -59,17 +67,25 @@ class AppState {
     var project by mutableStateOf(Project.empty())
         private set
 
-    /** File the project was last saved to / loaded from; plain Save (Ctrl+S) reuses it without a dialog. */
-    var currentFilePath by mutableStateOf<String?>(null)
+    /** Server board this tab shows, or null for the Home tab (board picker). */
+    var boardId by mutableStateOf<String?>(null)
+        private set
 
-    /** Project as of the last save/load — anything different means unsaved changes. */
-    private var lastSavedProject by mutableStateOf<Project?>(null)
+    /** The live connection to the server for [boardId]. */
+    var sync: BoardSync? = null
+        private set
 
-    val dirty: Boolean get() = project != lastSavedProject
+    var syncStatus by mutableStateOf(SyncStatus.Loading)
 
-    fun markSaved() {
-        lastSavedProject = project
-    }
+    /**
+     * The board as the server last confirmed it (null until loaded). Anything
+     * in [project] that differs is still on its way — see [BoardSync].
+     */
+    var syncedProject by mutableStateOf<Project?>(null)
+
+    val dirty: Boolean get() = syncedProject != null && project != syncedProject
+
+    val isLoaded: Boolean get() = boardId != null && syncedProject != null
 
     // ---- Undo / redo ----
     // Project is immutable, so a history entry is just a reference to an old copy.
@@ -117,28 +133,47 @@ class AppState {
         if (connectFromId != null && connectFromId !in valid) connectFromId = null
     }
 
-    // ---- Recent files ----
-    var recentFiles by mutableStateOf(listOf<String>())
-        private set
-    private var recentsLoaded = false
+    // ---- Server board lifecycle ----
 
-    fun loadRecentsIfNeeded() {
-        if (!recentsLoaded) {
-            recentFiles = RecentStore.load()
-            recentsLoaded = true
-        }
+    /** Binds this tab to a server board and starts syncing it. */
+    fun openBoard(id: String) {
+        sync?.stop()
+        boardId = id
+        syncedProject = null
+        project = Project(id = id, name = "Loading…")
+        replaceMessages(emptyList())
+        lastRead = ClientPrefs.lastRead(id)
+        sync = BoardSync(this, session, id).also { it.start() }
     }
 
-    fun noteRecentFile(path: String) {
-        loadRecentsIfNeeded()
-        recentFiles = (listOf(path) + recentFiles.filterNot { it == path }).take(10)
-        RecentStore.save(recentFiles)
+    /** Stops syncing (after one last push of pending edits). Called when the tab closes. */
+    fun closeBoard() {
+        sync?.flushAndStop()
+        sync = null
     }
 
-    fun dropRecentFile(path: String) {
-        recentFiles = recentFiles.filterNot { it == path }
-        RecentStore.save(recentFiles)
+    /** First load from the server: replaces everything and resets the view. */
+    fun loadFromServer(board: Project) {
+        syncedProject = board
+        replaceProject(board, "Opened ${board.name}")
+        zoomToFitWhenSized = true
     }
+
+    /**
+     * The other person's changes arrived: replay our unsent edits (and our
+     * undo/redo history) on top of the newer server board, so nothing of
+     * theirs is lost and nothing of ours is either.
+     */
+    fun applyRemote(oldBase: Project, newBase: Project) {
+        project = rebase(project, oldBase, newBase)
+        undoStack = undoStack.map { rebase(it, oldBase, newBase) }
+        redoStack = redoStack.map { rebase(it, oldBase, newBase) }
+        syncedProject = newBase
+        pruneStaleIds()
+    }
+
+    /** Set when a board loads; GraphCanvas frames the content once it knows its size. */
+    var zoomToFitWhenSized = false
 
     // ---- UI / interaction state (not saved) ----
 
@@ -146,8 +181,6 @@ class AppState {
     var selectedNodeIds by mutableStateOf(setOf<String>())
         private set
 
-    /** Sidebar filter: a node-type id, or null for "all types". */
-    var typeFilter by mutableStateOf<String?>(null)
     var status by mutableStateOf("Ready")
 
     /** Node whose title is being edited inline on the canvas (started by double-clicking the card). */
@@ -158,6 +191,9 @@ class AppState {
 
     /** True while Ctrl is held — maintained by the window-level key handler, used for toggle-select clicks. */
     var ctrlDown by mutableStateOf(false)
+
+    /** True while Alt is held — read from pointer events on the canvas; Alt+click/drag on a node draws a connection. */
+    var altDown by mutableStateOf(false)
 
     /**
      * Number of text fields that currently hold keyboard focus (0 or 1 in practice),
@@ -228,52 +264,29 @@ class AppState {
         status = "Preset deleted"
     }
 
-    // ---- Compare dialog ----
-
-    /** Result of the last Compare… (open project vs. a chosen file), or null when the dialog is closed. */
-    var compareDiff by mutableStateOf<ProjectDiff?>(null)
-        private set
-
-    fun showCompareDiff(diff: ProjectDiff) {
-        compareDiff = diff
-    }
-
-    fun closeCompareDiff() {
-        compareDiff = null
-    }
-
     // ---- Keyboard shortcuts help ----
 
     var shortcutsOpen by mutableStateOf(false)
 
     /** True when any modal is open — used to gate canvas/editing shortcuts. */
     val anyDialogOpen: Boolean
-        get() = exportDialogOpen || compareDiff != null || shortcutsOpen || newTypeKind != null
+        get() = exportDialogOpen || shortcutsOpen || newTypeKind != null
 
-    // ---- Panel layout (dp). Panels can be resized by dragging their inner border and collapsed entirely. ----
-    var leftSidebarVisible by mutableStateOf(true)
+    // ---- Right panel (dp). Resizable by dragging its inner border, collapsible. ----
+
+    enum class RightTab(val label: String) { Chat("Chat"), KeyDetails("Key details"), Details("Details") }
+
+    var rightTab by mutableStateOf(RightTab.Chat)
     var inspectorVisible by mutableStateOf(true)
-    var notesPanelVisible by mutableStateOf(true)
-    var leftSidebarWidth by mutableStateOf(230f)
+    var inspectorWidth by mutableStateOf(380f)
         private set
-    var inspectorWidth by mutableStateOf(280f)
-        private set
-    var notesPanelHeight by mutableStateOf(140f)
-        private set
-
-    /** [deltaDp] is how far the divider was dragged to the right. */
-    fun resizeLeftSidebar(deltaDp: Float) {
-        leftSidebarWidth = (leftSidebarWidth + deltaDp).coerceIn(160f, 420f)
-    }
 
     fun resizeInspector(deltaDp: Float) {
-        inspectorWidth = (inspectorWidth - deltaDp).coerceIn(220f, 500f)
+        inspectorWidth = (inspectorWidth - deltaDp).coerceIn(280f, 1600f)
     }
 
-    /** [deltaDp] is how far the divider was dragged downward. */
-    fun resizeNotesPanel(deltaDp: Float) {
-        notesPanelHeight = (notesPanelHeight - deltaDp).coerceIn(70f, 340f)
-    }
+    /** Chat takes the whole middle of the window (the canvas is hidden) — for long reading/writing sessions. */
+    var chatExpanded by mutableStateOf(false)
 
     // ---- Camera ----
     // The canvas transform is: screen = world * (zoom * density) + pan.
@@ -335,6 +348,9 @@ class AppState {
         pan = canvasCenter() - center * (zoom * viewDensity)
     }
 
+    /** Back to 100% around the current view center (after fitting a small board, which would otherwise zoom in). */
+    fun resetZoomKeepingCenter() = zoomBy(1f / zoom, canvasCenter())
+
     private class Bounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
     private fun contentBounds(): Bounds? {
@@ -392,26 +408,10 @@ class AppState {
         if (hit.isNotEmpty()) status = "${hit.size} item${if (hit.size == 1) "" else "s"} selected"
     }
 
-    // ---- Project lifecycle ----
-
-    fun newProject() {
-        currentFilePath = null
-        replaceProject(Project.empty(), "New project created")
-    }
-
-    fun openSampleProject() {
-        currentFilePath = null
-        replaceProject(Project.sample(), "Sample project loaded")
-    }
-
-    fun loadProject(loaded: Project, sourcePath: String) {
-        currentFilePath = sourcePath
-        replaceProject(loaded, "Loaded $sourcePath")
-    }
+    // ---- Board document ----
 
     private fun replaceProject(newProject: Project, message: String) {
         project = newProject
-        lastSavedProject = newProject
         undoStack = emptyList()
         redoStack = emptyList()
         selectedNodeIds = emptySet()
@@ -540,6 +540,10 @@ class AppState {
             title = "New ${def.label}",
             x = world.x - Node.DEFAULT_WIDTH / 2f,
             y = world.y - Node.DEFAULT_HEIGHT / 2f,
+            // Issues, improvements and action items start out as open work.
+            status = if (typeId in OPEN_BY_DEFAULT) NodeStatus.Open else NodeStatus.None,
+            createdAt = nowMillis(),
+            createdBy = session.userName,
         )
         project = project.copy(nodes = project.nodes + node)
         selectOnly(node.id)
@@ -838,19 +842,261 @@ class AppState {
         project = project.copy(edges = project.edges.filterNot { it.id == edgeId })
     }
 
+    // ---- Chat ----
+    // All live messages of this board, oldest first (deleted ones are dropped).
+    // Threads are derived views: a node's thread is its own messages plus any
+    // message elsewhere that links to it.
+
+    var messages by mutableStateOf(listOf<Message>())
+        private set
+    private val messageIndex = HashMap<String, Message>()
+
+    /** Posted here but not yet confirmed by the server. */
+    var pendingMessageIds by mutableStateOf(setOf<String>())
+        private set
+
+    /** Posting failed; shown with a retry affordance. */
+    var failedMessageIds by mutableStateOf(setOf<String>())
+        private set
+
+    /** Thread key ("" = inbox) → highest seq this user has read there. Per device, see [ClientPrefs]. */
+    var lastRead by mutableStateOf(mapOf<String, Long>())
+        private set
+
+    /** Per-thread counters for node cards and lists, recomputed when messages or read marks change. */
+    var threadStats by mutableStateOf(mapOf<String, ThreadStats>())
+        private set
+
+    // Chat view filters and composer state (per tab, not saved).
+    var chatMinImportance by mutableStateOf(0)
+    var chatKindFilter by mutableStateOf<MessageKind?>(null)
+    var chatSearch by mutableStateOf("")
+
+    /** Board feed shows only unfiled inbox messages. */
+    var feedInboxOnly by mutableStateOf(false)
+    var composerKind by mutableStateOf(MessageKind.Note)
+    var composerImportance by mutableStateOf(0)
+    var keyDetailThreshold by mutableStateOf(7)
+    var keyDetailWholeBoard by mutableStateOf(false)
+
+    /** Message whose text is being edited in the composer, or null when composing a new one. */
+    var editingMessageId by mutableStateOf<String?>(null)
+
+    fun messageById(id: String): Message? = messageIndex[id]
+
+    /** The node's thread: its own messages plus messages elsewhere that link to it. */
+    fun threadOf(nodeId: String): List<Message> =
+        messages.filter { it.nodeId == nodeId || nodeId in it.linkedNodeIds }
+
+    fun replaceMessages(all: List<Message>) {
+        messageIndex.clear()
+        pendingMessageIds = emptySet()
+        failedMessageIds = emptySet()
+        mergeMessages(all)
+    }
+
+    /** Merges server messages; newer seq wins, so a late poll never undoes an optimistic edit. */
+    fun mergeMessages(incoming: List<Message>) {
+        for (m in incoming) {
+            val existing = messageIndex[m.id]
+            if (existing == null || existing.seq == 0L || m.seq > existing.seq) messageIndex[m.id] = m
+        }
+        if (incoming.isNotEmpty()) {
+            val confirmed = incoming.mapTo(HashSet()) { it.id }
+            pendingMessageIds = pendingMessageIds - confirmed
+            failedMessageIds = failedMessageIds - confirmed
+        }
+        rebuildMessageViews()
+    }
+
+    /** Local-only change (optimistic send/edit, or reverting one). */
+    fun upsertLocalMessage(message: Message, pending: Boolean = false) {
+        messageIndex[message.id] = message
+        if (pending) {
+            pendingMessageIds = pendingMessageIds + message.id
+            failedMessageIds = failedMessageIds - message.id
+        }
+        rebuildMessageViews()
+    }
+
+    fun markMessageFailed(id: String) {
+        pendingMessageIds = pendingMessageIds - id
+        failedMessageIds = failedMessageIds + id
+    }
+
+    private fun rebuildMessageViews() {
+        messages = messageIndex.values
+            .filterNot { it.deleted }
+            .sortedWith(compareBy<Message>({ it.createdAt }, { it.seq }))
+        recomputeThreadStats()
+    }
+
+    private fun recomputeThreadStats() {
+        val me = session.userName
+        val stats = HashMap<String, ThreadStats>()
+        fun add(key: String, m: Message, home: Boolean) {
+            val s = stats[key] ?: ThreadStats()
+            val unread = m.author != me && m.seq > (lastRead[key] ?: 0L)
+            stats[key] = ThreadStats(
+                count = s.count + if (home) 1 else 0,
+                unread = s.unread + if (unread) 1 else 0,
+                maxImportance = maxOf(s.maxImportance, m.importance),
+                lastAt = maxOf(s.lastAt, m.createdAt),
+                openActions = s.openActions + if (home && m.kind == MessageKind.Action && !m.done) 1 else 0,
+            )
+        }
+        for (m in messages) {
+            add(m.nodeId, m, home = true)
+            // A mention lights up the node it points at, too.
+            for (linked in m.linkedNodeIds) if (linked != m.nodeId) add(linked, m, home = false)
+        }
+        threadStats = stats
+    }
+
+    /** Marks everything currently in a thread ("" = inbox) as read by this user. */
+    fun markThreadRead(nodeId: String) {
+        val thread = if (nodeId.isEmpty()) messages.filter { it.nodeId.isEmpty() } else threadOf(nodeId)
+        val top = thread.maxOfOrNull { it.seq } ?: return
+        if ((lastRead[nodeId] ?: 0L) >= top) return
+        lastRead = lastRead + (nodeId to top)
+        boardId?.let { ClientPrefs.saveLastRead(it, lastRead) }
+        recomputeThreadStats()
+    }
+
+    fun markAllRead() {
+        val tops = HashMap<String, Long>()
+        for (m in messages) {
+            tops[m.nodeId] = maxOf(tops[m.nodeId] ?: 0L, m.seq)
+            for (linked in m.linkedNodeIds) tops[linked] = maxOf(tops[linked] ?: 0L, m.seq)
+        }
+        lastRead = lastRead + tops
+        boardId?.let { ClientPrefs.saveLastRead(it, lastRead) }
+        recomputeThreadStats()
+        status = "Marked everything read"
+    }
+
+    val totalUnread: Int get() = threadStats.values.sumOf { it.unread }
+
+    // ---- Chat actions ----
+
+    /** Posts [text] to a node's thread — by default the selected node, or the board inbox when nothing is selected. */
+    fun sendMessage(text: String, nodeId: String = selectedNode?.id ?: "") {
+        val board = boardId ?: return
+        val body = text.trim()
+        if (body.isEmpty()) return
+        if (session.userName.isBlank()) {
+            status = "Sign in first"
+            return
+        }
+        val message = Message(
+            id = newId(),
+            boardId = board,
+            nodeId = nodeId,
+            author = session.userName,
+            text = body,
+            kind = composerKind,
+            importance = clampImportance(composerImportance),
+            linkedNodeIds = resolveNodeLinks(body, project).filter { it != nodeId },
+            createdAt = nowMillis(), // shown until the server stamps its own time
+        )
+        sync?.send(message)
+        composerImportance = 0
+        composerKind = MessageKind.Note
+    }
+
+    fun retryMessage(id: String) {
+        sync?.retry(id)
+    }
+
+    fun editMessageText(id: String, text: String) {
+        val body = text.trim()
+        if (body.isEmpty()) return
+        val original = messageById(id) ?: return
+        val links = resolveNodeLinks(body, project).filter { it != original.nodeId }
+        sync?.update(id, MessageUpdate(text = body, linkedNodeIds = links)) {
+            it.copy(text = body, linkedNodeIds = links, editedAt = nowMillis())
+        }
+    }
+
+    fun setMessageImportance(id: String, importance: Int) {
+        val value = clampImportance(importance)
+        sync?.update(id, MessageUpdate(importance = value)) { it.copy(importance = value) }
+    }
+
+    fun setMessageKind(id: String, kind: MessageKind) {
+        sync?.update(id, MessageUpdate(kind = kind)) { it.copy(kind = kind) }
+    }
+
+    fun setMessageDone(id: String, done: Boolean) {
+        sync?.update(id, MessageUpdate(done = done)) { it.copy(done = done) }
+    }
+
+    fun deleteMessage(id: String) {
+        sync?.update(id, MessageUpdate(deleted = true)) { it.copy(deleted = true) }
+        if (editingMessageId == id) editingMessageId = null
+    }
+
+    /** Files a message under another node ("" = back to the inbox). */
+    fun moveMessage(id: String, toNodeId: String) {
+        val m = messageById(id) ?: return
+        val links = m.linkedNodeIds.filter { it != toNodeId }
+        sync?.update(id, MessageUpdate(nodeId = toNodeId, linkedNodeIds = links)) {
+            it.copy(nodeId = toNodeId, linkedNodeIds = links)
+        }
+        val where = project.nodes.find { it.id == toNodeId }?.title ?: "the inbox"
+        status = "Moved message to $where"
+    }
+
+    /**
+     * Braindump triage: turns a message into a new node (titled from its first
+     * line, typed from its kind) placed in view, and files the message under it.
+     */
+    fun makeNodeFromMessage(id: String) {
+        val m = messageById(id) ?: return
+        val firstLine = m.text.lineSequence().first().replace(NodeLinkRegex) { it.groupValues[1] }
+        val title = firstLine.trim().take(60).ifBlank { "New topic" }
+        val type = when (m.kind) {
+            MessageKind.Issue -> "Issue"
+            MessageKind.Idea -> "Idea"
+            MessageKind.Decision -> "Decision"
+            MessageKind.Action -> "ActionItem"
+            MessageKind.Fix -> "Improvement"
+            MessageKind.Note -> "Topic"
+        }
+        pushUndo()
+        val cascade = (project.nodes.size % 6) * 18f
+        placeNodeOfType(screenToWorld(canvasCenter()) + Offset(cascade, cascade), type)
+        val node = selectedNode ?: return
+        updateNode(node.id) { it.copy(title = title, importance = m.importance) }
+        moveMessage(id, node.id)
+        status = "Created node \"$title\" from the message"
+    }
+
     init {
-        // A brand-new empty project has nothing worth saving yet.
-        lastSavedProject = project
         loadRecentTypesIfNeeded()
     }
 
     companion object {
-        const val MIN_ZOOM = 0.25f
+        const val MIN_ZOOM = 0.1f
         const val MAX_ZOOM = 3f
         const val UNDO_LIMIT = 50
         const val RECENT_TYPE_LIMIT = 6
 
         /** World-unit pitch of the canvas dot grid; Align snaps item corners to multiples of this. */
         const val GRID_SPACING = 26f
+
+        /** Node types that start life with status Open. */
+        private val OPEN_BY_DEFAULT = setOf("Issue", "Improvement", "ActionItem")
     }
 }
+
+/** Counters for one chat thread (a node, or "" for the board inbox). */
+data class ThreadStats(
+    /** Messages filed under this node (not counting mentions from elsewhere). */
+    val count: Int = 0,
+    /** Messages by someone else — here, or mentioning here — newer than my read mark. */
+    val unread: Int = 0,
+    val maxImportance: Int = 0,
+    val lastAt: Long = 0,
+    val openActions: Int = 0,
+)

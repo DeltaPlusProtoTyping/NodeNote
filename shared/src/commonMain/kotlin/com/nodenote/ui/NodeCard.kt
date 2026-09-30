@@ -28,11 +28,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -52,6 +54,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nodenote.model.Node
+import com.nodenote.model.NodeStatus
 import com.nodenote.state.AppState
 import com.nodenote.state.LocalAppState
 import com.nodenote.theme.Accent
@@ -106,7 +109,10 @@ fun NodeCard(node: Node, state: AppState) {
             // the handler must rebind to the document actually being rendered.
             .pointerInput(state, node.id) {
                 detectTapGestures(
-                    onTap = { state.nodeTapped(node.id) },
+                    // Alt+click starts a connection here; clicking another node finishes it.
+                    onTap = {
+                        if (state.altDown && state.connectFromId == null) state.startConnection(node.id) else state.nodeTapped(node.id)
+                    },
                     onDoubleTap = {
                         state.selectOnly(node.id)
                         state.editingNodeId = node.id
@@ -117,19 +123,46 @@ fun NodeCard(node: Node, state: AppState) {
             // makes it the selection). The drag delta arrives in the card's local
             // (pre-zoom) pixels, so dividing by density converts it to world units.
             .pointerInput(state, node.id) {
+                // Alt+drag draws a connection instead: release over another node to connect.
+                var connecting = false
                 detectDragGestures(
                     onDragStart = {
-                        state.pushUndo() // one undo step per drag gesture
-                        if (node.id !in state.selectedNodeIds) state.selectOnly(node.id)
+                        connecting = state.altDown
+                        if (connecting) {
+                            state.startConnection(node.id)
+                        } else {
+                            state.pushUndo() // one undo step per drag gesture
+                            if (node.id !in state.selectedNodeIds) state.selectOnly(node.id)
+                        }
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        state.moveSelected(dragAmount / state.viewDensity)
+                        if (!connecting) state.moveSelected(dragAmount / state.viewDensity)
                     },
+                    onDragEnd = { if (connecting) state.completeConnectionAtPointer() },
+                    onDragCancel = { if (connecting) state.cancelConnection() },
                 )
             },
     ) {
         val typeDef = state.nodeTypeOf(node.type)
+        // Zoomed far out (a wide board on a phone): drop the details and blow the
+        // title up so it stays readable (~9sp on screen) at any zoom.
+        if (state.zoom < FAR_ZOOM && state.editingNodeId != node.id) {
+            Row(Modifier.fillMaxSize().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size((10f / state.zoom).coerceAtMost(40f).dp).background(node.status.takeIf { it != NodeStatus.None }?.color ?: typeDef.color, CircleShape))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    node.title.ifBlank { "(untitled)" },
+                    fontSize = (9f / state.zoom).coerceAtMost(40f).sp,
+                    lineHeight = (10.5f / state.zoom).coerceAtMost(46f).sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            return@Box
+        }
         Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TypeDot(typeDef.color, 7.dp)
@@ -143,13 +176,21 @@ fun NodeCard(node: Node, state: AppState) {
                     maxLines = 1,
                     modifier = Modifier.weight(1f, fill = true),
                 )
-                if (node.attachments.isNotEmpty()) {
+                if (node.status != NodeStatus.None) {
+                    Box(Modifier.size(6.dp).background(node.status.color, CircleShape))
+                    Spacer(Modifier.width(3.dp))
                     Text(
-                        "📎${node.attachments.size}",
-                        fontSize = 9.sp,
-                        color = TextSecondary,
+                        node.status.label.uppercase(),
+                        fontSize = 8.sp,
+                        letterSpacing = 0.6.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = node.status.color,
                         maxLines = 1,
                     )
+                }
+                if (node.importance > 0) {
+                    Spacer(Modifier.width(5.dp))
+                    ImportanceBadge(node.importance, size = 15.dp)
                 }
             }
             Spacer(Modifier.height(5.dp))
@@ -178,6 +219,26 @@ fun NodeCard(node: Node, state: AppState) {
             }
         }
 
+        // Chat indicator: message count, accent-filled when someone else posted since I last looked.
+        val stats = state.threadStats[node.id]
+        val count = stats?.count ?: 0
+        val unread = stats?.unread ?: 0
+        if (count > 0 || unread > 0) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = (-8).dp, y = (-6).dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (unread > 0) Accent else PanelBorder)
+                    .padding(horizontal = 5.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    if (unread > 0) "$unread new" else "$count msg",
+                    style = tightText(8.sp, FontWeight.SemiBold, if (unread > 0) Color.White else TextSecondary),
+                )
+            }
+        }
+
         // Connection port: drag from this dot onto another node to create an
         // edge (the dashed preview line follows the cursor). Sits on the card's
         // right edge; its own drag handler wins over the card-move handler.
@@ -202,6 +263,9 @@ fun NodeCard(node: Node, state: AppState) {
         )
     }
 }
+
+/** Below this zoom, cards switch to the big-title "overview" rendering. */
+private const val FAR_ZOOM = 0.55f
 
 /**
  * The title text field shown in place of the title after double-clicking a card.

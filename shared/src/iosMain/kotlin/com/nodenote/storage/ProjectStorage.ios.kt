@@ -13,66 +13,46 @@ import platform.Foundation.stringWithContentsOfFile
 import platform.Foundation.writeToFile
 
 /**
- * iOS file access, V1: reads and writes a single project file in the app's
- * Documents directory (no document picker yet). Replace these two functions
- * with UIDocumentPickerViewController-based versions later without touching
- * any common code.
+ * iOS storage, V1: preferences and saved files go to the app's Documents
+ * directory; picking files needs UIDocumentPickerViewController and is not
+ * implemented yet. Unverified — iOS only builds on a macOS host.
  */
 actual object ProjectStorage {
-
-    private const val DEFAULT_FILE = "project.json"
 
     private fun documentsPath(): String =
         NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true).first() as String
 
-    actual fun saveProject(json: String, suggestedFileName: String): String? {
-        val path = documentsPath() + "/" + DEFAULT_FILE
+    actual fun readPrefs(fileName: String): String? =
+        NSString.stringWithContentsOfFile(documentsPath() + "/" + fileName, NSUTF8StringEncoding, null)
+
+    actual fun writePrefs(fileName: String, content: String): Boolean {
         @Suppress("CAST_NEVER_SUCCEEDS")
-        val ok = (json as NSString).writeToFile(path, atomically = true, encoding = NSUTF8StringEncoding, error = null)
-        return if (ok) path else null
+        return (content as NSString).writeToFile(
+            documentsPath() + "/" + fileName,
+            atomically = true,
+            encoding = NSUTF8StringEncoding,
+            error = null,
+        )
     }
 
-    actual fun loadProject(): Pair<String, String>? {
-        val path = documentsPath() + "/" + DEFAULT_FILE
-        val content = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null) ?: return null
-        return path to content
-    }
+    actual fun pickFile(accept: String, onResult: (PickedFile?) -> Unit) = onResult(null)
 
-    // File-explorer browsing is a desktop feature for V1; iOS uses its single Documents file.
-    actual fun listDirectory(path: String): List<FileNode> = emptyList()
-
-    actual fun homeDirectory(): String = documentsPath()
-
-    actual fun parentDirectory(path: String): String? = null
-
-    actual fun pickDirectory(): String? = null
-
-    actual fun writeToPath(path: String, content: String): Boolean {
-        @Suppress("CAST_NEVER_SUCCEEDS")
-        return (content as NSString).writeToFile(path, atomically = true, encoding = NSUTF8StringEncoding, error = null)
-    }
-
-    actual fun readFromPath(path: String): String? =
-        NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
-
-    actual fun readPrefs(fileName: String): String? {
-        val path = documentsPath() + "/" + fileName
-        return NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
-    }
-
-    actual fun writePrefs(fileName: String, content: String): Boolean =
-        writeToPath(documentsPath() + "/" + fileName, content)
-
-    /** Needs UIDocumentPickerViewController — not implemented in V1 (attachments can still be viewed/edited). */
-    actual fun pickAttachmentFile(): PickedFile? = null
-
-    actual fun saveAttachmentAs(suggestedFileName: String, bytes: ByteArray): String? {
+    actual fun saveFile(suggestedFileName: String, bytes: ByteArray, onResult: (String?) -> Unit) {
         val path = documentsPath() + "/" + suggestedFileName
-        return if (bytes.toNSData().writeToFile(path, atomically = true)) path else null
+        onResult(if (bytes.toNSData().writeToFile(path, atomically = true)) path else null)
     }
 }
+
+actual fun defaultServerUrl(): String = "http://localhost:8870"
+
+actual val isWebPlatform: Boolean = false
 
 @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 private fun ByteArray.toNSData(): NSData =
     if (isEmpty()) NSData()
     else usePinned { pinned -> NSData.create(bytes = pinned.addressOf(0), length = size.toULong()) }
+
+actual fun readClipboardText(onResult: (String?) -> Unit) =
+    onResult(platform.UIKit.UIPasteboard.generalPasteboard.string)
+
+actual fun setPageTitle(title: String) = Unit

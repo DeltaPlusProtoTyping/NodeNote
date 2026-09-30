@@ -4,6 +4,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -40,6 +44,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -98,6 +104,18 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
     // Keep AppState's camera math in sync with the actual viewport metrics.
     SideEffect { state.viewDensity = density }
 
+    // A freshly loaded board is framed once the canvas knows its size.
+    val canvasReady = state.canvasSize.width > 0
+    LaunchedEffect(state, canvasReady, state.syncedProject != null) {
+        if (canvasReady && state.syncedProject != null && state.zoomToFitWhenSized) {
+            state.zoomToFitWhenSized = false
+            if (state.project.nodes.isNotEmpty() || state.project.elements.isNotEmpty()) {
+                state.zoomToFit()
+                if (state.zoom > 1f) state.resetZoomKeepingCenter()
+            }
+        }
+    }
+
     Box(
         modifier
             .clipToBounds()
@@ -148,6 +166,19 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
+                        // Modifier keys ride along on pointer events — reliable in the browser too.
+                        state.altDown = event.keyboardModifiers.isAltPressed
+                        // Two fingers: pinch zooms around the fingers, and moving them pans.
+                        // Consumed here, in the parent's first pass, so the one-finger
+                        // drag handlers (pan / move node) stand down.
+                        if (event.changes.count { it.pressed && it.type == PointerType.Touch } >= 2) {
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+                            if (zoomChange != 1f) state.zoomBy(zoomChange, event.calculateCentroid(useCurrent = true))
+                            if (panChange != Offset.Zero) state.pan += panChange
+                            event.changes.forEach { it.consume() }
+                            continue
+                        }
                         when (event.type) {
                             // Any press over the canvas (or a node on it) gives the
                             // canvas keyboard focus for the Delete shortcut. Clicks
@@ -164,7 +195,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
                             PointerEventType.Move -> {
                                 val change = event.changes.first()
                                 state.pointerPos = change.position
-                                if (event.buttons.isTertiaryPressed) {
+                                if (event.buttons.isTertiaryPressed || event.buttons.isSecondaryPressed) {
                                     val delta = change.positionChange()
                                     if (delta != Offset.Zero) {
                                         state.pan += delta
@@ -396,12 +427,14 @@ private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
             Text("NodeNote", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         }
         Spacer(Modifier.height(5.dp))
-        Text("Map a system — drop nodes, connect them, annotate.", fontSize = 12.sp, color = TextSecondary)
+        Text("An empty board — map the topics, then talk under each one.", fontSize = 12.sp, color = TextSecondary)
         Spacer(Modifier.height(20.dp))
         EmptyHintRow("Add", "+ Add Node, or double-click the canvas")
-        EmptyHintRow("Navigate", "middle-drag to pan · scroll to zoom")
-        EmptyHintRow("Connect", "hover a node, drag its blue port to another")
-        EmptyHintRow("Open", "Open Recent, or pick a file in the explorer")
+        EmptyHintRow("Chat", "select a node; the chat panel is on the right")
+        EmptyHintRow("Braindump", "nothing selected = post to the board inbox")
+        EmptyHintRow("Rate", "mark key details 1–10 as you write them")
+        EmptyHintRow("Navigate", "middle- or right-drag to pan · scroll to zoom")
+        EmptyHintRow("Connect", "drag a node's port dot to another node")
     }
 }
 

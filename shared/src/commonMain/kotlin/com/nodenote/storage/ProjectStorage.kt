@@ -1,54 +1,52 @@
 package com.nodenote.storage
 
 /**
- * Platform file access — the only expect/actual seam in the app.
+ * Platform seam for the few things that differ between the desktop app and
+ * the browser app: small preference files, and letting the user pick or save a
+ * file.
  *
- * Desktop shows native save/open dialogs (see ProjectStorage.desktop.kt);
- * iOS reads/writes a fixed file in the app's Documents directory for V1
- * (see ProjectStorage.ios.kt). A future document-picker implementation
- * only needs to touch the actuals.
+ * Picking and saving take callbacks because the browser can only do them
+ * asynchronously (file input / download); desktop simply calls back before
+ * returning.
  */
-/** A file the user picked to attach to a node, fully read into memory. */
+/** A file the user picked, fully read into memory. */
 class PickedFile(val name: String, val bytes: ByteArray)
-
-/** An entry in the file-explorer tree: a folder or a project (.json) file. */
-class FileNode(val name: String, val path: String, val isDirectory: Boolean)
 
 expect object ProjectStorage {
 
-    /** Writes [json] to a user-chosen (or platform-default) location. Returns the saved path, or null if cancelled/failed. */
-    fun saveProject(json: String, suggestedFileName: String): String?
-
-    /** Returns (path, file content) of a user-chosen (or platform-default) project file, or null if cancelled/missing. */
-    fun loadProject(): Pair<String, String>?
-
-    /** Writes [content] directly to [path] with no dialog (used by plain Save once a file is known). */
-    fun writeToPath(path: String, content: String): Boolean
-
-    /** Reads a file directly by path with no dialog (used by Open Recent). Null if missing/unreadable. */
-    fun readFromPath(path: String): String?
-
-    /** Reads an app-level preferences file (e.g. export presets), or null if it doesn't exist. */
+    /** Reads an app-level preferences file (desktop: ~/.nodenote/, web: localStorage), or null if missing. */
     fun readPrefs(fileName: String): String?
 
     /** Writes an app-level preferences file. */
     fun writePrefs(fileName: String, content: String): Boolean
 
-    /** Opens a file picker and reads the chosen file (for node attachments). Null if cancelled or unreadable. */
-    fun pickAttachmentFile(): PickedFile?
+    /**
+     * Lets the user pick one file and reads it. [accept] is an HTML-style filter
+     * (".json", an image MIME wildcard, or "" for anything). [onResult] gets null on cancel or
+     * failure (the browser may never call back on cancel).
+     */
+    fun pickFile(accept: String, onResult: (PickedFile?) -> Unit)
 
-    /** Writes attachment [bytes] back out to disk. Returns the saved path, or null if cancelled/failed. */
-    fun saveAttachmentAs(suggestedFileName: String, bytes: ByteArray): String?
-
-    /** Lists folders and .json files directly under [path] (folders first, alphabetical). For the file explorer. */
-    fun listDirectory(path: String): List<FileNode>
-
-    /** Default starting folder for the file explorer (the user's home directory on desktop). */
-    fun homeDirectory(): String
-
-    /** The parent of [path], or null if it's a filesystem root. */
-    fun parentDirectory(path: String): String?
-
-    /** Opens a native folder picker; returns the chosen folder path or null if cancelled. */
-    fun pickDirectory(): String?
+    /**
+     * Saves [bytes] under a user-visible name: a save dialog on desktop, a
+     * download in the browser. [onResult] gets where it went, or null if cancelled.
+     */
+    fun saveFile(suggestedFileName: String, bytes: ByteArray, onResult: (String?) -> Unit)
 }
+
+/** The server this client talks to unless the user configured another (desktop: localhost; web: the page's own origin). */
+expect fun defaultServerUrl(): String
+
+/** True in the browser build — hides desktop-only settings such as the server address. */
+expect val isWebPlatform: Boolean
+
+/**
+ * Reads plain text from the system clipboard; [onResult] gets null when empty or
+ * not allowed. In the browser this asks permission and is async — the reason for
+ * the callback (used by the Paste button on password fields, since phones can't
+ * paste into the canvas-drawn text fields).
+ */
+expect fun readClipboardText(onResult: (String?) -> Unit)
+
+/** Browser: sets the tab title (e.g. "(3) NodeNote" when there are unread messages). No-op elsewhere. */
+expect fun setPageTitle(title: String)

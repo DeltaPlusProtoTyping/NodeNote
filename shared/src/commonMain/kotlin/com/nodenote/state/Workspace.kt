@@ -4,62 +4,181 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.nodenote.api.BoardSummary
+import com.nodenote.api.CreateBoardRequest
 import com.nodenote.model.Project
+import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.ProjectSerializer
 import com.nodenote.storage.ProjectStorage
-
-/** How the canvas area is divided between two open tabs. */
-enum class SplitMode { None, SideBySide, Stacked }
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * Top-level multi-document state: the open tabs (each a full [AppState]), the
- * file-explorer state, and the split layout. Per-document logic stays in
- * [AppState]; this just manages which documents are open and shown.
- *
- * Panes: [pane0] is always shown. When [split] is not [SplitMode.None], [pane1]
- * is shown alongside it. [focusedPane] decides which tab drives the toolbar,
- * inspector, notes, keyboard shortcuts and dialogs.
+ * Top-level multi-board state while signed in: the board list and the open tabs
+ * (each a full [AppState] bound to one server board, or a Home tab). Per-board
+ * logic stays in [AppState].
  */
-class Workspace {
+class Workspace(val session: Session) {
 
     val tabs = mutableStateListOf<AppState>()
 
-    var pane0 by mutableStateOf<AppState?>(null)
-        private set
-    var pane1 by mutableStateOf<AppState?>(null)
-        private set
-    var split by mutableStateOf(SplitMode.None)
-        private set
-    var focusedPane by mutableStateOf(0)
+    /** The tab on screen. */
+    var current by mutableStateOf<AppState?>(null)
         private set
 
-    // ---- File explorer ----
-    var rootDir by mutableStateOf(ProjectStorage.homeDirectory())
-    var fileExplorerVisible by mutableStateOf(true)
-    var fileExplorerWidth by mutableStateOf(250f)
+    // ---- Boards panel (left) ----
+    var boards by mutableStateOf(listOf<BoardSummary>())
+        private set
+    var showArchived by mutableStateOf(false)
+        private set
+    var boardsPanelVisible by mutableStateOf(true)
+    var boardsPanelWidth by mutableStateOf(260f)
         private set
 
-    fun resizeFileExplorer(deltaDp: Float) {
-        fileExplorerWidth = (fileExplorerWidth + deltaDp).coerceIn(170f, 460f)
+    // ---- Dialogs owned by the workspace ----
+    var settingsOpen by mutableStateOf(false)
+    var newBoardOpen by mutableStateOf(false)
+
+    fun resizeBoardsPanel(deltaDp: Float) {
+        boardsPanelWidth = (boardsPanelWidth + deltaDp).coerceIn(190f, 460f)
     }
+
+    private var refreshJob: Job? = null
 
     init {
-        newTab() // start with one empty document
+        // Reopen what was open last time; always keep at least one tab.
+        val reopen = ClientPrefs.openBoardIds
+        if (reopen.isEmpty()) newTab() else reopen.forEach { openBoard(it) }
+        showInFocusedPane(tabs.first())
+        refreshJob = session.scope.launch { refreshLoop() }
     }
 
-    /** The tab whose state drives the toolbar/inspector/keyboard right now. */
-    val focused: AppState
-        get() = (if (focusedPane == 1 && split != SplitMode.None) pane1 else pane0) ?: pane0 ?: tabs.first()
+    /** Stops all syncing (sign-out). Unsent edits get one last push. */
+    fun dispose() {
+        refreshJob?.cancel()
+        tabs.forEach { it.closeBoard() }
+    }
 
-    /** The tab currently shown in a given pane (0 or 1). */
-    fun paneTab(index: Int): AppState? = if (index == 1) pane1 else pane0
+    /** The tab on screen — it drives the toolbar, right panel, keyboard and dialogs. */
+    val focused: AppState
+        get() = current ?: tabs.first()
 
     fun isFocused(state: AppState): Boolean = focused === state
+
+    // ---- Board list ----
+
+    /** Refreshes the board list now and every 20 s (also how the dot next to Online recovers). */
+    private suspend fun refreshLoop() {
+        while (true) {
+            refreshBoardsNow()
+            delay(20_000)
+        }
+    }
+
+    private suspend fun refreshBoardsNow() {
+        try {
+            if (session.serverInfo == null) session.serverInfo = session.api.info()
+            boards = session.api.boards(includeArchived = showArchived)
+            session.markOnline()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            session.markOffline(e)
+        }
+    }
+
+    fun refreshBoards() {
+        session.scope.launch { refreshBoardsNow() }
+    }
+
+    fun toggleShowArchived() {
+        showArchived = !showArchived
+        refreshBoards()
+    }
+
+    fun summaryOf(boardId: String?): BoardSummary? = boards.find { it.id == boardId }
+
+    // ---- Opening boards ----
+
+    /** Opens a server board: focuses its tab if already open, reuses an empty Home tab, else opens a new tab. */
+    fun openBoard(boardId: String) {
+        tabs.firstOrNull { it.boardId == boardId }?.let {
+            selectTab(it)
+            return
+        }
+        val home = focusedOrNull()?.takeIf { it.boardId == null }
+        val target = home ?: AppState(session).also { tabs.add(it) }
+        target.openBoard(boardId)
+        if (current != null) showInFocusedPane(target)
+        rememberOpenBoards()
+    }
+
+    /** Creates a board on the server (optionally importing [project]) and opens it. */
+    fun createBoard(name: String, project: Project? = null) {
+        val status = focusedOrNull()
+        session.scope.launch {
+            try {
+                val summary = session.api.createBoard(CreateBoardRequest(name.trim(), project, session.userName))
+                refreshBoardsNow()
+                openBoard(summary.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                session.markOffline(e)
+                status?.status = "Could not create the board — is the server running at ${session.serverUrl}?"
+            }
+        }
+    }
+
+    fun setArchived(boardId: String, archived: Boolean) {
+        session.scope.launch {
+            try {
+                session.api.setArchived(boardId, archived)
+                refreshBoardsNow()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                session.markOffline(e)
+            }
+        }
+    }
+
+    /** Imports a NodeNote .json file as a new board. */
+    fun importBoardFromFile() {
+        ProjectStorage.pickFile(".json") { picked ->
+            if (picked == null) return@pickFile
+            val project = try {
+                ProjectSerializer.decode(picked.bytes.decodeToString())
+            } catch (e: Exception) {
+                focused.status = "${picked.name} is not a NodeNote board/project file"
+                return@pickFile
+            }
+            createBoard(project.name.ifBlank { picked.name.substringBeforeLast('.') }, project)
+        }
+    }
+
+    /** Downloads/saves the focused board as a .json file (backup, or to share outside the server). */
+    fun exportFocusedBoard() {
+        val state = focused
+        if (!state.isLoaded) return
+        val fileName = state.project.name.replace(Regex("[^A-Za-z0-9 _-]"), "").trim().ifBlank { "board" } + ".json"
+        ProjectStorage.saveFile(fileName, ProjectSerializer.encode(state.project).encodeToByteArray()) { path ->
+            state.status = if (path != null) "Exported $path" else "Export cancelled"
+        }
+    }
+
+    private fun rememberOpenBoards() {
+        ClientPrefs.openBoardIds = tabs.mapNotNull { it.boardId }
+    }
+
+    private fun focusedOrNull(): AppState? = if (tabs.isEmpty()) null else focused
 
     // ---- Tab management ----
 
     fun newTab(): AppState {
-        val s = AppState()
+        val s = AppState(session)
         tabs.add(s)
         showInFocusedPane(s)
         return s
@@ -71,114 +190,20 @@ class Workspace {
     }
 
     private fun showInFocusedPane(state: AppState) {
-        if (focusedPane == 1 && split != SplitMode.None) pane1 = state else { pane0 = state; focusedPane = 0 }
-    }
-
-    /** Shows [state] in a specific pane (used by per-pane tab strips when split) and focuses that pane. */
-    fun showTabInPane(index: Int, state: AppState) {
-        focusPane(index)
-        if (index == 1 && split != SplitMode.None) pane1 = state else pane0 = state
-    }
-
-    /** Opens a new blank tab directly in a specific pane. */
-    fun newTabInPane(index: Int): AppState {
-        val s = AppState()
-        tabs.add(s)
-        showTabInPane(index, s)
-        return s
-    }
-
-    fun focusPane(index: Int) {
-        focusedPane = if (index == 1 && split != SplitMode.None) 1 else 0
+        current = state
     }
 
     fun closeTab(state: AppState) {
         val idx = tabs.indexOf(state)
         if (idx < 0) return
+        state.closeBoard()
         tabs.removeAt(idx)
+        rememberOpenBoards()
         if (tabs.isEmpty()) {
             // Never leave zero tabs open.
-            val fresh = AppState()
-            tabs.add(fresh)
-            pane0 = fresh
-            pane1 = null
-            split = SplitMode.None
-            focusedPane = 0
+            current = AppState(session).also { tabs.add(it) }
             return
         }
-        val replacement = tabs[idx.coerceAtMost(tabs.size - 1)]
-        if (pane0 === state) pane0 = replacement
-        if (pane1 === state) pane1 = tabs.firstOrNull { it !== pane0 } ?: pane0
-        if (split != SplitMode.None && pane1 === pane0) split = SplitMode.None
-        if (pane1 == null) split = SplitMode.None
-    }
-
-    // ---- Splits ----
-
-    fun setSplitMode(mode: SplitMode) {
-        if (mode == SplitMode.None) {
-            split = SplitMode.None
-            pane1 = null
-            focusedPane = 0
-            return
-        }
-        split = mode
-        if (pane1 == null || pane1 === pane0) {
-            // Put a different tab in the second pane, creating one if needed.
-            pane1 = tabs.firstOrNull { it !== pane0 } ?: AppState().also { tabs.add(it) }
-        }
-    }
-
-    // ---- Opening projects ----
-
-    /** Opens a project file into a new tab (used by the file explorer). Returns the tab, or null on failure. */
-    fun openFileInNewTab(path: String): AppState? {
-        // If already open, just focus it.
-        tabs.firstOrNull { it.currentFilePath == path }?.let {
-            selectTab(it)
-            navigateExplorerTo(path)
-            return it
-        }
-        val content = ProjectStorage.readFromPath(path) ?: run {
-            focused.status = "Could not read $path"
-            return null
-        }
-        val project = try {
-            ProjectSerializer.decode(content)
-        } catch (e: Exception) {
-            focused.status = "Not a valid project file: $path"
-            return null
-        }
-        val s = AppState()
-        s.loadProject(project, path)
-        s.noteRecentFile(path)
-        tabs.add(s)
-        showInFocusedPane(s)
-        navigateExplorerTo(path)
-        return s
-    }
-
-    /** Points the file explorer at the folder containing [filePath]. */
-    fun navigateExplorerTo(filePath: String) {
-        ProjectStorage.parentDirectory(filePath)?.let { rootDir = it }
-    }
-
-    /** Shows the native open dialog and opens the chosen project in a new tab. */
-    fun openViaDialog() {
-        val result = ProjectStorage.loadProject() ?: return
-        openFileInNewTab(result.first)
-    }
-
-    /** Replaces the focused tab's document with a blank project (the New action). */
-    fun newProjectInFocusedTab() {
-        focused.newProject()
-    }
-
-    /** Opens the built-in sample project in a new tab. */
-    fun openSampleInNewTab() {
-        val s = AppState()
-        s.openSampleProject()
-        tabs.add(s)
-        showInFocusedPane(s)
+        if (current === state) current = tabs[idx.coerceAtMost(tabs.size - 1)]
     }
 }

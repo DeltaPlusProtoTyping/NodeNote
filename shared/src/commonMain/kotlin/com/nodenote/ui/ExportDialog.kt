@@ -114,15 +114,7 @@ fun ExportDialog(state: AppState) {
                         color = TextFaint,
                     )
                     Spacer(Modifier.weight(1f))
-                    Text(
-                        "✕",
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { state.closeExportDialog() }
-                            .padding(6.dp),
-                    )
+                    CloseButton(onClick = { state.closeExportDialog() })
                 }
                 Spacer(Modifier.height(10.dp))
 
@@ -179,12 +171,13 @@ private fun performExport(state: AppState, textMeasurer: androidx.compose.ui.tex
         .replace(Regex("[^A-Za-z0-9 _-]"), "")
         .trim()
         .ifBlank { "export" } + ".png"
-    val path = ProjectStorage.saveAttachmentAs(fileName, bytes)
-    if (path != null) {
-        state.status = "Exported $path"
-        state.closeExportDialog()
-    } else {
-        state.status = "Export cancelled"
+    ProjectStorage.saveFile(fileName, bytes) { path ->
+        if (path != null) {
+            state.status = "Exported $path"
+            state.closeExportDialog()
+        } else {
+            state.status = "Export cancelled"
+        }
     }
 }
 
@@ -423,7 +416,7 @@ private fun PresetSection(state: AppState) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            Text("▾", fontSize = 10.sp, color = TextFaint)
+            GlyphIcon(Glyph.ChevronDown, TextFaint, 10.dp)
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             if (state.exportPresets.isEmpty()) {
@@ -518,7 +511,7 @@ private fun ToggleRow(label: String, checked: Boolean, enabled: Boolean = true, 
                 .background(if (checked) Accent else PanelBackgroundRaised),
             contentAlignment = Alignment.Center,
         ) {
-            if (checked) Text("✓", fontSize = 9.sp, color = Color(0xFF0B1018))
+            if (checked) GlyphIcon(Glyph.Check, Color(0xFF0B1018), 11.dp)
         }
         Spacer(Modifier.width(8.dp))
         Text(

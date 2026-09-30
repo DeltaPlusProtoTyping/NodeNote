@@ -37,8 +37,11 @@ import com.nodenote.theme.TextPrimary
 import com.nodenote.theme.TextSecondary
 
 private val shortcutGroups = listOf(
-    "Files" to listOf(
-        "Ctrl + S" to "Save",
+    "Chat" to listOf(
+        "Enter" to "Send message",
+        "Shift + Enter" to "New line",
+        "[[" to "Link a node (pick from the list, Enter completes)",
+        "Escape" to "Cancel editing a message",
     ),
     "Edit" to listOf(
         "Ctrl + Z" to "Undo",
@@ -56,15 +59,21 @@ private val shortcutGroups = listOf(
         "Ctrl + −" to "Zoom out",
         "Ctrl + 0" to "Reset view",
         "Mouse wheel" to "Zoom at cursor",
-        "Middle-drag" to "Pan canvas",
+        "Middle- or right-drag" to "Pan canvas",
     ),
     "Canvas" to listOf(
         "Double-click empty space" to "Add a node (last-used type)",
         "Double-click a node" to "Rename inline",
         "Double-click a text block" to "Edit text",
         "Drag a node's right-edge dot" to "Connect to another node",
+        "Alt + drag a node" to "Connect it to the node you release on",
+        "Alt + click a node" to "Start a connection (then click the target)",
         "Drag on empty space" to "Box-select",
         "Ctrl + click" to "Toggle item in selection",
+        "Click empty space" to "Deselect — the chat shows the whole board",
+    ),
+    "Saving" to listOf(
+        "(automatic)" to "Every edit and message syncs to the server as you go",
     ),
 )
 
@@ -92,15 +101,7 @@ fun ShortcutsDialog(state: AppState) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Shortcuts", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, modifier = Modifier.weight(1f))
-                    Text(
-                        "✕",
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { state.shortcutsOpen = false }
-                            .padding(6.dp),
-                    )
+                    CloseButton(onClick = { state.shortcutsOpen = false })
                 }
                 Spacer(Modifier.height(12.dp))
                 Column(

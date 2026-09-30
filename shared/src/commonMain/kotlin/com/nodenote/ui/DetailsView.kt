@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.model.Attachment
 import com.nodenote.model.AttachmentKind
 import com.nodenote.model.Node
+import com.nodenote.model.NodeStatus
 import com.nodenote.model.attachmentKindForFileName
 import com.nodenote.model.formatByteSize
 import com.nodenote.model.newId
@@ -60,11 +62,12 @@ import com.nodenote.theme.TextSecondary
 import kotlin.math.roundToInt
 
 /**
- * Right panel: edits the selected node. Every change writes straight into
- * AppState (controlled fields), so the canvas updates as you type.
+ * The Details tab of the right panel: edits the selected node (or canvas
+ * element). Every change writes straight into AppState (controlled fields), so
+ * the canvas updates as you type and the edit syncs to the other person.
  */
 @Composable
-fun InspectorPanel(state: AppState, modifier: Modifier = Modifier) {
+fun DetailsView(state: AppState, modifier: Modifier = Modifier) {
     val node = state.selectedNode
 
     Column(
@@ -74,11 +77,6 @@ fun InspectorPanel(state: AppState, modifier: Modifier = Modifier) {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            PanelCaption("Inspector", modifier = Modifier.weight(1f))
-            PanelToggleButton("▸", onClick = { state.inspectorVisible = false })
-        }
-
         val selectionCount = state.selectedNodeIds.size
         val element = state.selectedElement
         when {
@@ -97,7 +95,7 @@ fun InspectorPanel(state: AppState, modifier: Modifier = Modifier) {
             else -> {
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    "Select a node to edit its title, type, description, properties and connections.\n\n" +
+                    "Select a node to edit its title, status, importance, summary, properties and connections.\n\n" +
                         "Ctrl+click or drag a box on the canvas to select several nodes at once.",
                     fontSize = 12.sp,
                     color = TextFaint,
@@ -127,18 +125,69 @@ private fun NodeEditor(state: AppState, node: Node) {
         modifier = Modifier.fillMaxWidth(),
     )
 
+    FieldLabel("Status")
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        NodeStatus.entries.forEach { s ->
+            StatusPill(s, filled = node.status == s, onClick = {
+                state.pushUndo()
+                state.updateNode(node.id) { it.copy(status = s) }
+            })
+        }
+    }
+
+    FieldLabel("Importance")
+    ImportancePicker(node.importance, onChange = { v ->
+        state.pushUndo()
+        state.updateNode(node.id) { it.copy(importance = v) }
+    })
+
+    FieldLabel("Owner")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CompactTextField(
+            value = node.owner,
+            onValueChange = { v -> state.updateNode(node.id) { it.copy(owner = v) } },
+            modifier = Modifier.weight(1f),
+            placeholder = "Who's driving this?",
+        )
+        // One-click owners: everyone who has posted on this board.
+        val people = (state.messages.map { it.author } + state.session.userName).filter { it.isNotBlank() }.distinct().take(4)
+        people.forEach { name ->
+            Spacer(Modifier.width(4.dp))
+            Pill(name, authorColor(name), filled = node.owner == name, onClick = {
+                state.updateNode(node.id) { it.copy(owner = if (it.owner == name) "" else name) }
+            })
+        }
+    }
+
+    FieldLabel("Summary — where this stands")
+    CompactTextField(
+        value = node.summary,
+        onValueChange = { v -> state.updateNode(node.id) { it.copy(summary = v) } },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = "Current state, root cause, next step…",
+        singleLine = false,
+        minHeight = 64.dp,
+    )
+
     FieldLabel("Description")
     CompactTextField(
         value = node.description,
         onValueChange = { v -> state.updateNode(node.id) { it.copy(description = v) } },
         modifier = Modifier.fillMaxWidth(),
-        placeholder = "Short description",
+        placeholder = "Short description (shown on the card)",
         singleLine = false,
-        minHeight = 64.dp,
+        minHeight = 48.dp,
     )
 
     Text(
-        "X ${node.x.roundToInt()}    Y ${node.y.roundToInt()}    ·    ${node.width.roundToInt()} × ${node.height.roundToInt()}",
+        buildString {
+            if (node.createdAt > 0) {
+                append("Created ${formatStamp(node.createdAt)}")
+                if (node.createdBy.isNotBlank()) append(" by ${node.createdBy}")
+                append("  ·  ")
+            }
+            append("${node.width.roundToInt()} × ${node.height.roundToInt()}")
+        },
         fontSize = 11.sp,
         color = TextFaint,
     )
@@ -304,7 +353,7 @@ private fun AttachmentsSection(state: AppState, node: Node) {
     PanelCaption("Attachments (${node.attachments.size})")
 
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        CompactOutlinedButton("+ File / image", onClick = { pickAndAttach(state, node) }, modifier = Modifier.weight(1f))
+        CompactOutlinedButton("+ File / image", onClick = { pickAndAttach(state, node.id) }, modifier = Modifier.weight(1f))
         CompactOutlinedButton(
             "+ Text",
             onClick = { state.addAttachment(node.id, Attachment(newId(), AttachmentKind.Text, "Text note")) },
@@ -322,25 +371,26 @@ private fun AttachmentsSection(state: AppState, node: Node) {
 }
 
 @OptIn(ExperimentalEncodingApi::class)
-private fun pickAndAttach(state: AppState, node: Node) {
-    val picked = ProjectStorage.pickAttachmentFile()
-    if (picked == null) {
-        state.status = "Attach cancelled"
-        return
+private fun pickAndAttach(state: AppState, nodeId: String) {
+    ProjectStorage.pickFile("") { picked ->
+        if (picked == null) {
+            state.status = "Attach cancelled"
+            return@pickFile
+        }
+        if (picked.bytes.size > Attachment.MAX_EMBED_BYTES) {
+            state.status = "File too large to embed (max ${formatByteSize(Attachment.MAX_EMBED_BYTES)})"
+            return@pickFile
+        }
+        state.addAttachment(
+            nodeId,
+            Attachment(
+                id = newId(),
+                kind = attachmentKindForFileName(picked.name),
+                name = picked.name,
+                content = Base64.encode(picked.bytes),
+            ),
+        )
     }
-    if (picked.bytes.size > Attachment.MAX_EMBED_BYTES) {
-        state.status = "File too large to embed (max ${formatByteSize(Attachment.MAX_EMBED_BYTES)})"
-        return
-    }
-    state.addAttachment(
-        node.id,
-        Attachment(
-            id = newId(),
-            kind = attachmentKindForFileName(picked.name),
-            name = picked.name,
-            content = Base64.encode(picked.bytes),
-        ),
-    )
 }
 
 @OptIn(ExperimentalEncodingApi::class)
@@ -351,8 +401,9 @@ private fun exportAttachment(state: AppState, attachment: Attachment) {
         state.status = "Attachment data is corrupted"
         return
     }
-    val path = ProjectStorage.saveAttachmentAs(attachment.name, bytes)
-    state.status = if (path != null) "Saved $path" else "Save cancelled"
+    ProjectStorage.saveFile(attachment.name, bytes) { path ->
+        state.status = if (path != null) "Saved $path" else "Save cancelled"
+    }
 }
 
 @OptIn(ExperimentalEncodingApi::class)

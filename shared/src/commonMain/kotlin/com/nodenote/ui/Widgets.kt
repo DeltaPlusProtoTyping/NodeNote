@@ -147,6 +147,7 @@ fun ToolbarButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     color: Color = TextPrimary,
+    dropdown: Boolean = false,
 ) {
     TextButton(
         onClick = onClick,
@@ -160,6 +161,10 @@ fun ToolbarButton(
         ),
     ) {
         Text(text, fontSize = 12.sp)
+        if (dropdown) {
+            Spacer(Modifier.width(4.dp))
+            GlyphIcon(Glyph.ChevronDown, if (enabled) color.copy(alpha = 0.7f) else TextFaint.copy(alpha = 0.5f), 9.dp)
+        }
     }
 }
 
@@ -277,21 +282,20 @@ fun HorizontalResizeHandle(onDragDp: (Float) -> Unit) {
 
 /** Small chevron used in panel headers to collapse the panel. */
 @Composable
-fun PanelToggleButton(glyph: String, onClick: () -> Unit) {
-    Text(
-        glyph,
-        fontSize = 11.sp,
-        color = TextSecondary,
-        modifier = Modifier
+fun PanelToggleButton(glyph: Glyph, onClick: () -> Unit) {
+    Box(
+        Modifier
             .clip(RoundedCornerShape(4.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 1.dp),
-    )
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+    ) {
+        GlyphIcon(glyph, TextSecondary, 10.dp)
+    }
 }
 
 /** Thin clickable strip shown in place of a collapsed side panel; clicking reopens it. */
 @Composable
-fun CollapsedSideStrip(glyph: String, onExpand: () -> Unit) {
+fun CollapsedSideStrip(glyph: Glyph, onExpand: () -> Unit) {
     Box(
         Modifier
             .fillMaxHeight()
@@ -300,22 +304,21 @@ fun CollapsedSideStrip(glyph: String, onExpand: () -> Unit) {
             .clickable(onClick = onExpand),
         contentAlignment = Alignment.TopCenter,
     ) {
-        Text(glyph, fontSize = 11.sp, color = TextSecondary, modifier = Modifier.padding(top = 10.dp))
+        GlyphIcon(glyph, TextSecondary, 10.dp, Modifier.padding(top = 12.dp))
     }
 }
 
 /** Tiny "x" used to remove list rows (properties, connections). */
 @Composable
 fun RemoveButton(onClick: () -> Unit) {
-    Text(
-        "✕",
-        fontSize = 11.sp,
-        color = TextFaint,
-        modifier = Modifier
+    Box(
+        Modifier
             .clip(RoundedCornerShape(4.dp))
             .clickable(onClick = onClick)
-            .padding(4.dp),
-    )
+            .padding(5.dp),
+    ) {
+        GlyphIcon(Glyph.Close, TextFaint, 9.dp)
+    }
 }
 
 /** Small uppercase header inside a type dropdown (e.g. "RECENT"). */
@@ -408,7 +411,7 @@ fun EdgeTypeSelector(
             TypeDot(selected.color, 6.dp)
             Spacer(Modifier.width(5.dp))
             Text(selected.label, fontSize = 11.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-            Text("▾", fontSize = 9.sp, color = TextFaint)
+            GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             val all = state.allEdgeTypes
@@ -483,7 +486,7 @@ fun TypeSelector(
                 Spacer(Modifier.width(6.dp))
             }
             Text(selected?.label ?: "All types", fontSize = 12.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-            Text("▾", fontSize = 10.sp, color = TextFaint)
+            GlyphIcon(Glyph.ChevronDown, TextFaint, 10.dp)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (allowAll) {
