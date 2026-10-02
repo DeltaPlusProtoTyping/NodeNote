@@ -235,16 +235,15 @@ private fun SortMenu(sort: NodeSort, onSort: (NodeSort) -> Unit) {
 
 @Composable
 private fun InboxRow(state: AppState, count: Int, unread: Int, onPicked: () -> Unit) {
-    val active = state.selectedNodeIds.isEmpty() && state.feedInboxOnly
+    val active = state.rightTab == AppState.RightTab.Sort
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .background(if (active) Accent.copy(alpha = 0.14f) else Color.Transparent)
             .clickable {
-                state.clearSelection()
-                state.feedInboxOnly = true
-                state.rightTab = AppState.RightTab.Chat
+                // The pile of dumped thoughts opens in the Sort tab.
+                state.rightTab = AppState.RightTab.Sort
                 state.inspectorVisible = true
                 onPicked()
             }
@@ -253,8 +252,8 @@ private fun InboxRow(state: AppState, count: Int, unread: Int, onPicked: () -> U
     ) {
         Box(Modifier.size(7.dp).background(Accent, RoundedCornerShape(2.dp)))
         Spacer(Modifier.width(8.dp))
-        Text("Inbox", fontSize = 12.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-        if (unread > 0) UnreadBadge(unread) else if (count > 0) Text("$count", fontSize = 10.sp, color = TextFaint)
+        Text("Unsorted", fontSize = 12.sp, color = TextPrimary, modifier = Modifier.weight(1f))
+        if (count > 0) UnreadBadge(count)
     }
 }
 

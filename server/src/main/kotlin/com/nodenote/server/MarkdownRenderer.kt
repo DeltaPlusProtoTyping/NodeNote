@@ -170,6 +170,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .apply { if (node.status != NodeStatus.None) raw("status", yamlScalar(node.status.label)) }
                 .apply { if (node.importance > 0) raw("importance", node.importance) }
                 .apply { if (node.owner.isNotBlank()) str("owner", node.owner.trim()) }
+                .apply { if (node.keywords.isNotBlank()) str("keywords", node.keywords.trim()) }
                 .apply { if (node.createdAt > 0) raw("created", date(node.createdAt)) }
                 .apply { if (updated > 0) raw("updated", dateTime(updated)) }
                 .raw("messages", own.size)

@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.model.Message
 import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
+import com.nodenote.model.resolveNodeLinks
+import com.nodenote.sort.NodeMatcher
 import com.nodenote.state.AppState
 import com.nodenote.state.LocalAppState
 import com.nodenote.theme.Accent
@@ -155,7 +157,7 @@ private fun ChatHeader(state: AppState, node: Node?) {
                 ImportanceBadge(node.importance)
             } else {
                 Text(
-                    if (state.feedInboxOnly) "Inbox — unfiled braindumps" else "Board feed — all nodes",
+                    if (state.feedInboxOnly) "Unsorted thoughts" else "Board feed — all nodes",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary,
@@ -180,7 +182,7 @@ private fun ChatHeader(state: AppState, node: Node?) {
             }
             KindFilter(state)
             if (node == null) {
-                FilterChip("Inbox", selected = state.feedInboxOnly, color = Accent) { state.feedInboxOnly = !state.feedInboxOnly }
+                FilterChip("Unsorted", selected = state.feedInboxOnly, color = Accent) { state.feedInboxOnly = !state.feedInboxOnly }
             }
             CompactTextField(
                 value = state.chatSearch,
@@ -434,7 +436,7 @@ private fun MessageItem(state: AppState, m: Message, showNodeChip: Boolean, comp
 @Composable
 private fun MessageNodeChip(state: AppState, m: Message) {
     if (m.nodeId.isEmpty()) {
-        Pill("Inbox", Accent)
+        Pill("Unsorted", Accent, onClick = { state.rightTab = AppState.RightTab.Sort })
         return
     }
     val node = state.project.nodes.find { it.id == m.nodeId }
@@ -536,7 +538,7 @@ fun NodePickerMenu(state: AppState, expanded: Boolean, includeInbox: Boolean, on
             minHeight = 26.dp,
         )
         Spacer(Modifier.height(4.dp))
-        if (includeInbox) MenuRow("Inbox (unfiled)", color = Accent) { onPick("") }
+        if (includeInbox) MenuRow("Back to Unsorted", color = Accent) { onPick("") }
         state.project.nodes
             .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
             .sortedBy { it.title.lowercase() }
@@ -560,11 +562,22 @@ fun NodePickerMenu(state: AppState, expanded: Boolean, includeInbox: Boolean, on
 
 private val OpenLinkRegex = Regex("""\[\[([^\[\]]*)$""")
 
+/**
+ * The message box. On a node it posts to that node. With no node (board feed,
+ * Sort tab) it is the dump bar: Enter drops the thought into Unsorted, and as
+ * you type it offers the nodes it probably belongs under — tap one to file it
+ * straight there.
+ */
 @Composable
-private fun Composer(state: AppState, node: Node?) {
+internal fun Composer(state: AppState, node: Node?) {
     val editing = state.editingMessageId?.let { state.messageById(it) }
     var value by remember { mutableStateOf(TextFieldValue("")) }
     val focusRequester = remember { FocusRequester() }
+
+    // A half-typed message holds off automatic update reloads.
+    val hasDraft = value.text.isNotBlank()
+    LaunchedEffect(hasDraft) { state.draftActive = hasDraft }
+    DisposableEffect(state) { onDispose { state.draftActive = false } }
 
     // Entering edit mode loads the message text; leaving it clears the box.
     LaunchedEffect(editing?.id) {
@@ -589,14 +602,26 @@ private fun Composer(state: AppState, node: Node?) {
         value = TextFieldValue(before + inserted + after, TextRange(before.length + inserted.length))
     }
 
-    fun submit() {
+    // Dump bar only: where this thought probably goes (needs a couple of real words to guess).
+    val dumping = node == null && editing == null
+    val fileTo = remember(value.text, state.matcher) {
+        if (!dumping || NodeMatcher.tokenize(value.text).size < 2) emptyList()
+        else state.suggestionsFor(value.text, resolveNodeLinks(value.text, state.project))
+    }
+
+    fun submit(toNode: Node? = null) {
         val text = value.text
         if (text.isBlank()) return
         if (editing != null) {
             state.editMessageText(editing.id, text)
             state.editingMessageId = null
         } else {
-            state.sendMessage(text, node?.id ?: "")
+            state.sendMessage(text, toNode?.id ?: node?.id ?: "")
+            state.status = when {
+                toNode != null -> "Filed under ${toNode.title}"
+                node == null -> "Dropped in Unsorted"
+                else -> state.status
+            }
         }
         value = TextFieldValue("")
     }
@@ -648,6 +673,17 @@ private fun Composer(state: AppState, node: Node?) {
             }
         }
 
+        if (fileTo.isNotEmpty() && suggestions.isEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text("File under", fontSize = 10.sp, color = TextFaint)
+                fileTo.forEach { n -> FileChip(state, n) { submit(toNode = n) } }
+            }
+        }
+
         Row(verticalAlignment = Alignment.Bottom) {
             ChatTextField(
                 value = value,
@@ -655,7 +691,7 @@ private fun Composer(state: AppState, node: Node?) {
                 placeholder = when {
                     editing != null -> "Edit message…"
                     node != null -> "Message ${node.title.ifBlank { "this node" }}…  ([[ links a node)"
-                    else -> "Braindump to the board inbox…  ([[ links a node)"
+                    else -> "Dump a thought… Enter drops it in Unsorted"
                 },
                 onEnter = {
                     if (suggestions.isNotEmpty()) completeLink(suggestions.first()) else submit()
@@ -674,10 +710,52 @@ private fun Composer(state: AppState, node: Node?) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    if (editing != null) "Save" else "Send",
+                    when {
+                        editing != null -> "Save"
+                        node == null -> "Dump"
+                        else -> "Send"
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = if (value.text.isBlank()) TextFaint else Color.White,
+                )
+            }
+        }
+    }
+}
+
+/** One-tap destination: the node's title, with its parent underneath for context. */
+@Composable
+internal fun FileChip(state: AppState, node: Node, primary: Boolean = false, onClick: () -> Unit) {
+    val parent = state.parentOf(node.id)
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(if (primary) Accent.copy(alpha = 0.16f) else PanelBackgroundRaised)
+            .border(1.dp, if (primary) Accent.copy(alpha = 0.7f) else PanelBorder, RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TypeDot(state.nodeTypeOf(node.type).color, 7.dp)
+        Spacer(Modifier.width(6.dp))
+        Column {
+            Text(
+                node.title.ifBlank { "(untitled)" },
+                fontSize = 12.sp,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 200.dp),
+            )
+            if (parent != null) {
+                Text(
+                    "in ${parent.title.ifBlank { "(untitled)" }}",
+                    fontSize = 9.sp,
+                    color = TextFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 200.dp),
                 )
             }
         }

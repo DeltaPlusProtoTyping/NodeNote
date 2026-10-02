@@ -56,4 +56,9 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 - File pick/save are callback-based (`ProjectStorage.pickFile/saveFile`) because the browser is async.
 - KDoc containing `/*` (e.g. `"image/*"`) opens a nested comment in Kotlin and breaks the file.
 - Compose wasm renders its own fonts: avoid emoji / unusual symbols in UI text.
+- Kotlin/Wasm's regex engine rejects Unicode classes like `\p{L}` (PatternSyntaxException kills the
+  whole page) — split text with `Char.isLetterOrDigit()` instead. Test web changes in the browser.
+- Sorting: `core/.../sort/NodeMatcher.kt` (BM25 over node text + filed messages) and
+  `BoardHierarchy` (parents = BFS from the most-connected Goal). Old open tabs reload themselves
+  when `/api/info` reports a new `webBuild` (protects new fields like `Node.keywords`).
 - Claude's sandbox virtualizes `%APPDATA%`; don't launch the app from Claude tools for real data.

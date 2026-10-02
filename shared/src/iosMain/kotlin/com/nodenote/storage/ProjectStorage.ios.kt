@@ -56,3 +56,7 @@ actual fun readClipboardText(onResult: (String?) -> Unit) =
     onResult(platform.UIKit.UIPasteboard.generalPasteboard.string)
 
 actual fun setPageTitle(title: String) = Unit
+
+actual fun reloadPage(): Boolean = false
+
+actual fun reloadWhenHidden(canReload: () -> Boolean) = Unit

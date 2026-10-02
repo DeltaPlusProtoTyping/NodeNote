@@ -50,3 +50,13 @@ expect fun readClipboardText(onResult: (String?) -> Unit)
 
 /** Browser: sets the tab title (e.g. "(3) NodeNote" when there are unread messages). No-op elsewhere. */
 expect fun setPageTitle(title: String)
+
+/** Browser: reloads the page (to pick up a new version). Returns false where that isn't possible (desktop). */
+expect fun reloadPage(): Boolean
+
+/**
+ * Browser: reload the page the next time it is hidden (tab switched away, phone
+ * locked) — if [canReload] still says it's safe — so an update lands without
+ * interrupting anyone. No-op elsewhere.
+ */
+expect fun reloadWhenHidden(canReload: () -> Boolean)

@@ -51,6 +51,8 @@ data class Node(
     /** Epoch millis; 0 for nodes created before timestamps existed. */
     val createdAt: Long = 0,
     val createdBy: String = "",
+    /** Extra words that should route thoughts here when sorting (free text, e.g. "VF-2, spindle, warm-up"). */
+    val keywords: String = "",
 ) {
     val centerX: Float get() = x + width / 2f
     val centerY: Float get() = y + height / 2f

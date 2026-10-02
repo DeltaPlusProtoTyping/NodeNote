@@ -58,6 +58,20 @@ class Session {
         private set
 
     var serverInfo by mutableStateOf<ServerInfo?>(null)
+        private set
+
+    /** The server is running a newer app than this page/window — see [noteServerInfo]. */
+    var updateAvailable by mutableStateOf(false)
+        private set
+    private var firstWebBuild: String? = null
+
+    /** Records /api/info; a changed web build under an open page means this page is stale. */
+    fun noteServerInfo(info: ServerInfo) {
+        serverInfo = info
+        val build = info.webBuild ?: return
+        if (firstWebBuild == null) firstWebBuild = build
+        else if (build != firstWebBuild) updateAvailable = true
+    }
 
     /** Why the user was sent back to the sign-in screen (e.g. an expired session). */
     var signInNotice by mutableStateOf<String?>(null)
@@ -137,6 +151,7 @@ class Session {
         ClientPrefs.sessionToken = ""
         signedIn = false
         serverInfo = null
+        firstWebBuild = null
         connection = ConnectionState.Connecting
     }
 

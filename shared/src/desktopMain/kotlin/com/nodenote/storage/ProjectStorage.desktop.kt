@@ -89,3 +89,7 @@ actual fun readClipboardText(onResult: (String?) -> Unit) {
 }
 
 actual fun setPageTitle(title: String) = Unit
+
+actual fun reloadPage(): Boolean = false
+
+actual fun reloadWhenHidden(canReload: () -> Boolean) = Unit

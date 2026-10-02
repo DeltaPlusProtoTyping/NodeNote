@@ -50,7 +50,7 @@ class BoardSync(private val state: AppState, private val session: Session, val b
         job?.cancel()
         state.syncStatus = SyncStatus.Loading
         job = scope.launch {
-            loadInitial()
+            if (!loadInitial()) return@launch
             launch { pushLoop() }
             pollLoop()
         }
@@ -73,7 +73,8 @@ class BoardSync(private val state: AppState, private val session: Session, val b
 
     // ---- Board ----
 
-    private suspend fun loadInitial() {
+    /** Loads board + chat; false if the server doesn't have this board. */
+    private suspend fun loadInitial(): Boolean {
         var attempt = 0
         while (true) {
             try {
@@ -87,13 +88,16 @@ class BoardSync(private val state: AppState, private val session: Session, val b
                 }
                 session.markOnline()
                 state.syncStatus = SyncStatus.Synced
-                return
+                return true
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ClientRequestException) {
                 if (e.response.status == HttpStatusCode.NotFound) {
-                    state.status = "Board no longer exists on the server"
-                    throw CancellationException("board missing")
+                    // A tab remembered from before (deleted board, other server): drop it quietly.
+                    job = null
+                    session.markOnline() // the server answered; it just doesn't have this board
+                    state.boardMissing()
+                    return false
                 }
                 failed(e)
                 delay(backoff(attempt++))

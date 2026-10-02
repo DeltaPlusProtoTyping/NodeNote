@@ -159,6 +159,14 @@ private fun NodeEditor(state: AppState, node: Node) {
         }
     }
 
+    FieldLabel("Keywords — help sort thoughts here")
+    CompactTextField(
+        value = node.keywords,
+        onValueChange = { v -> state.updateNode(node.id) { it.copy(keywords = v) } },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = "e.g. VF-2, spindle, warm-up",
+    )
+
     FieldLabel("Summary — where this stands")
     CompactTextField(
         value = node.summary,

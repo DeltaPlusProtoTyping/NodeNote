@@ -56,10 +56,12 @@ private enum class CompactPage(val label: String) { Nodes("Boards & nodes"), Cha
 @Composable
 fun CompactLayout(workspace: Workspace) {
     val state = workspace.focused
-    var page by remember { mutableStateOf(CompactPage.Nodes) }
+    // With a board open, start on the chat — the dump bar is the first thing you see.
+    var page by remember { mutableStateOf(if (state.boardId != null) CompactPage.Chat else CompactPage.Nodes) }
 
     Column(Modifier.fillMaxSize().background(CanvasBackground)) {
         CompactTopBar(workspace)
+        UpdateBanner(workspace)
         HorizontalDivider(color = PanelBorder)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {

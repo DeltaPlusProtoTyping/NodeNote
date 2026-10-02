@@ -28,6 +28,8 @@ import com.nodenote.model.newId
 import com.nodenote.model.nodeType
 import com.nodenote.model.nowMillis
 import com.nodenote.model.rebase
+import com.nodenote.sort.BoardHierarchy
+import com.nodenote.sort.NodeMatcher
 import com.nodenote.model.resolveNodeLinks
 import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.PresetStore
@@ -144,6 +146,16 @@ class AppState(val session: Session) {
         replaceMessages(emptyList())
         lastRead = ClientPrefs.lastRead(id)
         sync = BoardSync(this, session, id).also { it.start() }
+    }
+
+    /** The server doesn't have this board (any more): become a Home tab and stop remembering it. */
+    fun boardMissing() {
+        val id = boardId ?: return
+        sync = null
+        boardId = null
+        syncedProject = null
+        replaceProject(Project.empty(), "That board isn't on the server any more")
+        ClientPrefs.openBoardIds = ClientPrefs.openBoardIds - id
     }
 
     /** Stops syncing (after one last push of pending edits). Called when the tab closes. */
@@ -274,7 +286,7 @@ class AppState(val session: Session) {
 
     // ---- Right panel (dp). Resizable by dragging its inner border, collapsible. ----
 
-    enum class RightTab(val label: String) { Chat("Chat"), KeyDetails("Key details"), Details("Details") }
+    enum class RightTab(val label: String) { Chat("Chat"), Sort("Sort"), KeyDetails("Key details"), Details("Details") }
 
     var rightTab by mutableStateOf(RightTab.Chat)
     var inspectorVisible by mutableStateOf(true)
@@ -882,6 +894,40 @@ class AppState(val session: Session) {
     /** Message whose text is being edited in the composer, or null when composing a new one. */
     var editingMessageId by mutableStateOf<String?>(null)
 
+    /** Something is typed in a message box — an automatic reload must wait. */
+    var draftActive by mutableStateOf(false)
+
+    // ---- Sorting (the Unsorted pile) ----
+
+    /** Thoughts dumped without a node, oldest first — the pile the Sort tab works through. */
+    val unsorted: List<Message> get() = messages.filter { it.nodeId.isEmpty() }
+
+    private var matcherCache: Triple<Project, List<Message>, NodeMatcher>? = null
+    private var hierarchyCache: Pair<Project, BoardHierarchy>? = null
+
+    /** Keyword matcher over the current board + its filed messages (rebuilt when either changes). */
+    val matcher: NodeMatcher
+        get() {
+            val p = project
+            val m = messages
+            matcherCache?.let { (cp, cm, matcher) -> if (cp === p && cm === m) return matcher }
+            return NodeMatcher(p, m).also { matcherCache = Triple(p, m, it) }
+        }
+
+    /** Each node's parent in the tree that grows out from the board's main goal. */
+    val hierarchy: BoardHierarchy
+        get() {
+            val p = project
+            hierarchyCache?.let { (cp, h) -> if (cp === p) return h }
+            return BoardHierarchy(p).also { hierarchyCache = p to it }
+        }
+
+    fun parentOf(nodeId: String): Node? = hierarchy.parents[nodeId]?.let { id -> project.nodes.find { it.id == id } }
+
+    /** Up to three nodes a thought probably belongs under. */
+    fun suggestionsFor(text: String, linkedNodeIds: List<String> = emptyList()): List<Node> =
+        matcher.suggest(text, 3, linkedNodeIds).mapNotNull { s -> project.nodes.find { it.id == s.nodeId } }
+
     fun messageById(id: String): Message? = messageIndex[id]
 
     /** The node's thread: its own messages plus messages elsewhere that link to it. */
@@ -1051,7 +1097,7 @@ class AppState(val session: Session) {
      * Braindump triage: turns a message into a new node (titled from its first
      * line, typed from its kind) placed in view, and files the message under it.
      */
-    fun makeNodeFromMessage(id: String) {
+    fun makeNodeFromMessage(id: String, parentId: String? = null) {
         val m = messageById(id) ?: return
         val firstLine = m.text.lineSequence().first().replace(NodeLinkRegex) { it.groupValues[1] }
         val title = firstLine.trim().take(60).ifBlank { "New topic" }
@@ -1064,12 +1110,50 @@ class AppState(val session: Session) {
             MessageKind.Note -> "Topic"
         }
         pushUndo()
-        val cascade = (project.nodes.size % 6) * 18f
-        placeNodeOfType(screenToWorld(canvasCenter()) + Offset(cascade, cascade), type)
+        val parent = parentId?.let { pid -> project.nodes.find { it.id == pid } }
+        val spot = parent?.let { freeSpotBeside(it) } ?: run {
+            val cascade = (project.nodes.size % 6) * 18f
+            screenToWorld(canvasCenter()) + Offset(cascade, cascade)
+        }
+        placeNodeOfType(spot, type)
         val node = selectedNode ?: return
         updateNode(node.id) { it.copy(title = title, importance = m.importance) }
+        // Children point at their parent, like the rest of the map.
+        if (parent != null) project = project.copy(edges = project.edges + Edge(newId(), node.id, parent.id))
         moveMessage(id, node.id)
-        status = "Created node \"$title\" from the message"
+        status = "Created node \"$title\"" + (parent?.let { " under ${it.title}" } ?: "")
+    }
+
+    /**
+     * Center point for a new child of [parent]: the first free spot on a ring
+     * around it, starting on the side facing away from the parent's own parent
+     * (so the map keeps growing outward from the goal).
+     */
+    private fun freeSpotBeside(parent: Node): Offset {
+        val grand = parentOf(parent.id)
+        val outward = if (grand != null) {
+            kotlin.math.atan2(parent.centerY - grand.centerY, parent.centerX - grand.centerX)
+        } else {
+            0.0f
+        }
+        fun free(cx: Float, cy: Float): Boolean {
+            val l = cx - Node.DEFAULT_WIDTH / 2 - 24
+            val t = cy - Node.DEFAULT_HEIGHT / 2 - 24
+            val r = cx + Node.DEFAULT_WIDTH / 2 + 24
+            val b = cy + Node.DEFAULT_HEIGHT / 2 + 24
+            return project.nodes.none { n -> n.x < r && n.x + n.width > l && n.y < b && n.y + n.height > t }
+        }
+        for (radius in listOf(240f, 360f, 480f)) {
+            for (step in 0 until 12) {
+                // 0, +30°, -30°, +60°, … around the outward direction
+                val offset = ((step + 1) / 2) * (if (step % 2 == 0) 1 else -1) * (kotlin.math.PI.toFloat() / 6f)
+                val angle = outward + offset
+                val cx = parent.centerX + radius * kotlin.math.cos(angle)
+                val cy = parent.centerY + radius * kotlin.math.sin(angle)
+                if (free(cx, cy)) return Offset(cx, cy)
+            }
+        }
+        return Offset(parent.centerX + 240f, parent.centerY + 120f)
     }
 
     init {

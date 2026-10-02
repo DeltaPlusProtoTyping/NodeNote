@@ -53,7 +53,11 @@ fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AppState.RightTab.entries.forEach { tab ->
-                val badge = if (tab == AppState.RightTab.Chat) state.totalUnread else 0
+                val badge = when (tab) {
+                    AppState.RightTab.Chat -> state.totalUnread
+                    AppState.RightTab.Sort -> state.unsorted.size
+                    else -> 0
+                }
                 RightTabButton(tab.label, selected = state.rightTab == tab, badge = badge) { state.rightTab = tab }
                 Spacer(Modifier.width(2.dp))
             }
@@ -73,6 +77,7 @@ fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean 
                 Text("Open a board to start chatting.", fontSize = 12.sp, color = TextFaint)
             }
             state.rightTab == AppState.RightTab.Chat -> ChatView(state, Modifier.fillMaxSize())
+            state.rightTab == AppState.RightTab.Sort -> SortView(state, Modifier.fillMaxSize())
             state.rightTab == AppState.RightTab.KeyDetails -> KeyDetailsView(state, Modifier.fillMaxSize())
             else -> DetailsView(state, Modifier.fillMaxSize())
         }
@@ -197,7 +202,7 @@ private fun KeyDetailRow(state: AppState, m: Message, showNode: Boolean) {
             if (showNode) {
                 val node = state.project.nodes.find { it.id == m.nodeId }
                 Text(
-                    node?.title?.ifBlank { "(untitled)" } ?: if (m.nodeId.isEmpty()) "Inbox" else "(removed node)",
+                    node?.title?.ifBlank { "(untitled)" } ?: if (m.nodeId.isEmpty()) "Unsorted" else "(removed node)",
                     fontSize = 10.sp,
                     color = node?.let { state.nodeTypeOf(it.type).color } ?: TextFaint,
                     maxLines = 1,
@@ -220,7 +225,7 @@ private fun KeyDetailRow(state: AppState, m: Message, showNode: Boolean) {
 private fun keyDetailsMarkdown(state: AppState, details: List<Message>): String = buildString {
     appendLine("Key details — ${state.project.name}")
     for (m in details) {
-        val node = state.project.nodes.find { it.id == m.nodeId }?.title ?: "Inbox"
+        val node = state.project.nodes.find { it.id == m.nodeId }?.title ?: "Unsorted"
         val kind = if (m.kind != MessageKind.Note) " ${m.kind.label}:" else ""
         appendLine("- [${m.importance}/10]$kind ${m.text.replace('\n', ' ')} — $node (${m.author}, ${formatStamp(m.createdAt)})")
     }

@@ -100,3 +100,20 @@ private fun readClipboardJs(onText: (String) -> Unit, onFail: () -> Unit): Unit 
 actual fun setPageTitle(title: String) = setTitleJs(title)
 
 private fun setTitleJs(title: String): Unit = js("document.title = title")
+
+actual fun reloadPage(): Boolean {
+    reloadJs()
+    return true
+}
+
+actual fun reloadWhenHidden(canReload: () -> Boolean) = reloadWhenHiddenJs(canReload)
+
+private fun reloadJs(): Unit = js("window.location.reload()")
+
+private fun reloadWhenHiddenJs(canReload: () -> Boolean): Unit = js(
+    """{
+    const check = () => { if (document.hidden && canReload()) window.location.reload(); };
+    document.addEventListener('visibilitychange', check);
+    check();
+}""",
+)

@@ -30,6 +30,12 @@ data class ServerInfo(
     val vaultPath: String,
     /** The caller's Tailscale display name when the request came through `tailscale serve`, else null. */
     val identity: String? = null,
+    /**
+     * Fingerprint of the web app the server is serving. When it changes under an
+     * open page, that page is out of date and reloads (an old page could otherwise
+     * drop fields it doesn't know about when it edits a node).
+     */
+    val webBuild: String? = null,
 )
 
 @Serializable

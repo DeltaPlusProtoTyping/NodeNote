@@ -34,11 +34,14 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.state.AppState
 import com.nodenote.state.LocalAppState
 import com.nodenote.state.Workspace
+import com.nodenote.storage.isWebPlatform
+import com.nodenote.storage.reloadPage
 import com.nodenote.theme.Accent
 import com.nodenote.theme.CanvasBackground
 import com.nodenote.theme.PanelBackground
 import com.nodenote.theme.PanelBorder
 import com.nodenote.theme.TextFaint
+import com.nodenote.theme.TextPrimary
 import com.nodenote.theme.TextSecondary
 import kotlin.math.roundToInt
 
@@ -73,6 +76,7 @@ private fun MainContent(workspace: Workspace, windowWidthDp: Float) {
     val focused = workspace.focused
     Column(Modifier.fillMaxSize().background(CanvasBackground)) {
         TopBar(workspace)
+        UpdateBanner(workspace)
         HorizontalDivider(color = PanelBorder)
         TabBar(workspace)
         HorizontalDivider(color = PanelBorder)
@@ -130,6 +134,35 @@ private fun CanvasArea(workspace: Workspace, modifier: Modifier) {
                 GraphCanvas(tab, Modifier.fillMaxSize())
                 ConnectionBanner(tab, Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
             }
+        }
+    }
+}
+
+/**
+ * Shown when the server got a newer version than this page/window. The browser
+ * also reloads by itself the next time the tab is in the background.
+ */
+@Composable
+fun UpdateBanner(workspace: Workspace) {
+    if (!workspace.session.updateAvailable) return
+    Row(
+        Modifier.fillMaxWidth().background(Accent.copy(alpha = 0.18f)).padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (isWebPlatform) "NodeNote was updated — reload to get the new version." else "The server was updated — restart the app to stay in sync.",
+            fontSize = 12.sp,
+            color = TextPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        if (isWebPlatform) {
+            Text(
+                "Reload",
+                fontSize = 12.sp,
+                color = Accent,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { reloadPage() }.padding(horizontal = 8.dp, vertical = 2.dp),
+            )
         }
     }
 }

@@ -10,6 +10,7 @@ import com.nodenote.model.Project
 import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.ProjectSerializer
 import com.nodenote.storage.ProjectStorage
+import com.nodenote.storage.reloadWhenHidden
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -79,7 +80,12 @@ class Workspace(val session: Session) {
 
     private suspend fun refreshBoardsNow() {
         try {
-            if (session.serverInfo == null) session.serverInfo = session.api.info()
+            val wasStale = session.updateAvailable
+            session.noteServerInfo(session.api.info())
+            if (session.updateAvailable && !wasStale) {
+                // Reload as soon as nobody is looking and nothing is unsent.
+                reloadWhenHidden { tabs.none { it.dirty || it.draftActive || it.pendingMessageIds.isNotEmpty() } }
+            }
             boards = session.api.boards(includeArchived = showArchived)
             session.markOnline()
         } catch (e: CancellationException) {

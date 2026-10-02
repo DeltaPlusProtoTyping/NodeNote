@@ -68,7 +68,7 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
             // Set by `tailscale serve` for requests from tailnet users; absent when hit directly.
             val identity = call.request.headers["Tailscale-User-Name"]?.takeIf { it.isNotBlank() }
                 ?: call.request.headers["Tailscale-User-Login"]?.takeIf { it.isNotBlank() }
-            call.respond(ServerInfo("NodeNote", SERVER_VERSION, config.vaultDir.toString(), identity))
+            call.respond(ServerInfo("NodeNote", SERVER_VERSION, config.vaultDir.toString(), identity, webBuild(config)))
         }
 
         route("/boards") {
@@ -121,6 +121,18 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
             call.respond(HttpStatusCode.NoContent)
         }
     }
+}
+
+/** Short hash of the served app.js (it embeds the content-hashed wasm names), computed once. */
+private var cachedWebBuild: String? = null
+
+private fun webBuild(config: ServerConfig): String? {
+    cachedWebBuild?.let { return it }
+    val bytes = config.webDir?.resolve("app.js")?.toFile()?.takeIf { it.isFile }?.readBytes()
+        ?: ServerConfig::class.java.getResourceAsStream("/web/app.js")?.use { it.readBytes() }
+        ?: return null
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+    return digest.take(6).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }.also { cachedWebBuild = it }
 }
 
 private const val DEFAULT_WAIT_SECONDS = 25L
