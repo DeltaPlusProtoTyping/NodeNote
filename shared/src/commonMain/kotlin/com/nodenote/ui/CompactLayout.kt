@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +32,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nodenote.model.ColorBy
 import com.nodenote.state.ConnectionState
 import com.nodenote.state.Workspace
 import com.nodenote.theme.Accent
@@ -120,30 +117,9 @@ private fun CompactMap(state: com.nodenote.state.AppState) {
             Modifier.align(Alignment.BottomEnd).padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            PhoneColorButton(state)
             MapButton("-") { state.zoomOut() }
             MapButton("+") { state.zoomIn() }
             MapButton("Fit") { state.zoomToFit() }
-        }
-    }
-}
-
-/** "Color by" on the phone: what the card colors mean (type, status, importance…). */
-@Composable
-private fun PhoneColorButton(state: com.nodenote.state.AppState) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        MapButton("Color") { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            ColorBy.entries.forEach { by ->
-                DropdownMenuItem(
-                    text = { Text(by.label, fontSize = 14.sp, color = if (by == state.colorBy) Accent else TextPrimary) },
-                    onClick = {
-                        state.changeColorBy(by)
-                        open = false
-                    },
-                )
-            }
         }
     }
 }

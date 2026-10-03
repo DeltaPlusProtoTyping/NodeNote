@@ -511,20 +511,27 @@ class AppState(val session: Session) {
 
     fun selectOnly(id: String) {
         selectedNodeIds = setOf(id)
-        selectedAreaId = null
-        selectedEdgeId = null
+        leaveAreaAndLink()
     }
 
     fun toggleSelected(id: String) {
         selectedNodeIds = if (id in selectedNodeIds) selectedNodeIds - id else selectedNodeIds + id
-        selectedAreaId = null
-        selectedEdgeId = null
+        leaveAreaAndLink()
     }
 
     fun clearSelection() {
         selectedNodeIds = emptySet()
+        leaveAreaAndLink()
+    }
+
+    /**
+     * Selecting something else lets go of a selected area or link, and of an area name
+     * being typed (an editor that had focus has already kept its text when it lost it).
+     */
+    private fun leaveAreaAndLink() {
         selectedAreaId = null
         selectedEdgeId = null
+        editingAreaId = null
     }
 
     /** The box-drag on empty canvas ended: select what it covers, or (while drawing an area) make the area. */
@@ -548,8 +555,7 @@ class AppState(val session: Session) {
             project.elements.forEach { if (hits(it.x, it.y, it.width, it.height)) add(it.id) }
         }
         selectedNodeIds = hit
-        selectedAreaId = null
-        selectedEdgeId = null
+        leaveAreaAndLink()
         if (hit.isNotEmpty()) status = "${hit.size} item${if (hit.size == 1) "" else "s"} selected"
     }
 
@@ -964,17 +970,38 @@ class AppState(val session: Session) {
         project = project.copy(nodes = project.nodes.map { n -> positions[n.id]?.let { (x, y) -> n.copy(x = x, y = y) } ?: n })
     }
 
-    /** Tidies the cards inside one area around its hub, then fits the area to them. */
+    /**
+     * Tidies the cards inside one area around their hub, compactly, centred where the area
+     * is, so the territory stays in its place. The area grows if the cards need more room
+     * but never shrinks by itself ("Fit to cards" does that on purpose).
+     */
     fun tidyArea(areaId: String) {
         val area = project.areas.find { it.id == areaId } ?: return
-        val ids = project.cardsIn(area).mapTo(HashSet()) { it.id }
+        val cards = project.cardsIn(area)
+        val ids = cards.mapTo(HashSet()) { it.id }
         if (ids.size < 2) {
             status = "Nothing to tidy in ${area.title.ifBlank { "this area" }}"
             return
         }
         pushUndo()
-        placeTidied(ids)
-        project = project.copy(areas = project.areas.map { a -> if (a.id == areaId) a.fittedTo(project.nodes.filter { it.id in ids }) else a })
+        val sub = project.copy(
+            nodes = cards,
+            edges = project.edges.filter { it.fromNodeId in ids && it.toNodeId in ids },
+            areas = emptyList(),
+        )
+        val positions = RadialLayout.layout(sub, RadialLayout.Options(nodeGap = 22f, levelGap = 36f, islandGap = 60f))
+        val laid = cards.map { n -> positions[n.id]?.let { (x, y) -> n.copy(x = x, y = y) } ?: n }
+        // Centre the new arrangement on the area's room for cards (below its name).
+        val dx = (area.x + area.right) / 2f - (laid.minOf { it.x } + laid.maxOf { it.x + it.width }) / 2f
+        val dy = (area.y + Area.TITLE_ROOM + area.bottom) / 2f - (laid.minOf { it.y } + laid.maxOf { it.y + it.height }) / 2f
+        val moved = laid.associate { it.id to it.copy(x = it.x + dx, y = it.y + dy) }
+        project = project.copy(nodes = project.nodes.map { moved[it.id] ?: it })
+        val fitted = area.fittedTo(moved.values.toList())
+        val left = min(area.x, fitted.x)
+        val top = min(area.y, fitted.y)
+        updateArea(areaId) {
+            it.copy(x = left, y = top, width = max(area.right, fitted.right) - left, height = max(area.bottom, fitted.bottom) - top)
+        }
         status = "Tidied ${area.title.ifBlank { "the area" }}; the rest of the map stayed put (Ctrl+Z puts it back)"
     }
 
@@ -1257,9 +1284,9 @@ class AppState(val session: Session) {
         private set
 
     fun selectEdge(id: String) {
-        selectedEdgeId = id
         selectedNodeIds = emptySet()
-        selectedAreaId = null
+        leaveAreaAndLink()
+        selectedEdgeId = id
     }
 
     /** The connection drawn under a click at [screen] (within a few pixels of its line), if any. */
@@ -1327,6 +1354,7 @@ class AppState(val session: Session) {
         selectedAreaId = id
         selectedNodeIds = emptySet()
         selectedEdgeId = null
+        if (editingAreaId != id) editingAreaId = null
     }
 
     /**

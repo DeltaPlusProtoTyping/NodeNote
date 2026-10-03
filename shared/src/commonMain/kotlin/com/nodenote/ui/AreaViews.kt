@@ -443,38 +443,69 @@ private fun QuickBarRow(modifier: Modifier, content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** What the card colors mean while the map is colored by something other than type. */
+/**
+ * "Color: Type" in the map's top-right corner: what the card colors mean (type, status,
+ * importance, effort, person, or issues with no fix yet). With a lens on, its legend sits
+ * underneath, with the way back to type.
+ */
 @Composable
-fun LensLegend(state: AppState, modifier: Modifier = Modifier) {
-    val keys = state.lens.legend(state.shownProject.nodes)
+fun ColorByControl(state: AppState, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    val active = state.colorBy != ColorBy.Type
     val shape = RoundedCornerShape(8.dp)
     Column(
         modifier
             .pointerInput(Unit) { detectTapGestures { } }
             .clip(shape)
             .background(PanelBackground.copy(alpha = 0.94f))
-            .border(1.dp, PanelBorder, shape)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            .border(1.dp, if (active) Accent.copy(alpha = 0.6f) else PanelBorder, shape)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Colored by ${state.colorBy.label.lowercase()}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Spacer(Modifier.width(10.dp))
-            Text(
-                "Back to type",
-                fontSize = 11.sp,
-                color = Accent,
-                modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { state.changeColorBy(ColorBy.Type) }.padding(horizontal = 3.dp),
-            )
+        Box {
+            Row(
+                Modifier.clip(RoundedCornerShape(5.dp)).clickable { open = true }.padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Color: ", fontSize = 11.sp, color = TextFaint)
+                Text(state.colorBy.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (active) Accent else TextPrimary)
+                Spacer(Modifier.width(4.dp))
+                GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                ColorBy.entries.forEach { by ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(by.label, fontSize = 12.sp, color = if (by == state.colorBy) Accent else TextPrimary)
+                                Text(by.hint, fontSize = 10.sp, color = TextFaint)
+                            }
+                        },
+                        onClick = {
+                            state.changeColorBy(by)
+                            open = false
+                        },
+                    )
+                }
+            }
         }
-        if (keys.isEmpty()) {
-            Text("Nothing to color yet", fontSize = 11.sp, color = TextFaint)
-        }
-        keys.forEach { key ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                LensSwatch(key.colorArgb)
-                Spacer(Modifier.width(7.dp))
-                Text(key.label, fontSize = 11.sp, color = TextSecondary, maxLines = 1)
+        if (active) {
+            val keys = state.lens.legend(state.shownProject.nodes)
+            Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                if (keys.isEmpty()) Text("Nothing to color yet", fontSize = 11.sp, color = TextFaint)
+                keys.forEach { key ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LensSwatch(key.colorArgb)
+                        Spacer(Modifier.width(7.dp))
+                        Text(key.label, fontSize = 11.sp, color = TextSecondary, maxLines = 1)
+                    }
+                }
+                Text(
+                    "Back to type",
+                    fontSize = 11.sp,
+                    color = Accent,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { state.changeColorBy(ColorBy.Type) }.padding(vertical = 2.dp),
+                )
             }
         }
     }

@@ -60,7 +60,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nodenote.model.BuiltinTypes
-import com.nodenote.model.ColorBy
 import com.nodenote.model.Project
 import com.nodenote.model.edgeType
 import com.nodenote.state.AppState
@@ -246,6 +245,8 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             key("area-" + area.id) { AreaLabel(area, state) }
         }
 
+        ColorByControl(state, Modifier.align(Alignment.TopEnd).padding(10.dp))
+
         val selected = state.selectedNode
         val quiet = state.connectFromId == null && state.marquee == null
         if (selected != null && selected.id !in state.hiddenNodeIds && quiet) {
@@ -260,7 +261,6 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
         if (selectedEdge != null && quiet) LinkQuickBarOverlay(state, selectedEdge)
 
         if (state.presenting) PresentingBadge(state, Modifier.align(Alignment.TopStart).padding(10.dp))
-        if (state.colorBy != ColorBy.Type) LensLegend(state, Modifier.align(Alignment.TopEnd).padding(10.dp))
         if (state.drawingArea) DrawingAreaHint(state, Modifier.align(Alignment.TopCenter).padding(10.dp))
 
         if (state.project.nodes.isEmpty() && state.project.elements.isEmpty() && state.project.areas.isEmpty()) {
