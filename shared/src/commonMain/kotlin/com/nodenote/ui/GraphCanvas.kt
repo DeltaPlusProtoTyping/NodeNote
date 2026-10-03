@@ -97,7 +97,8 @@ import kotlin.math.min
  *    left-drag on empty canvas draws a box-selection marquee. Touch drag pans,
  *    so the same code works on iOS.
  *  - Tap on empty canvas (inside an area too) deselects / cancels a pending
- *    connection; a tap on a link selects the link. An area is selected by its name.
+ *    connection; a tap on a link selects the link. An area is selected by its name or
+ *    its border; dragging either moves it, its eight grips resize it.
  *  - After "Area" with nothing selected, the box-drag draws the new area instead.
  */
 @Composable
@@ -231,6 +232,11 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             drawMarquee(state)
         }
 
+        // Area borders: invisible bands under the cards that select and move their area.
+        for (area in state.shownProject.areas) {
+            key("border-" + area.id) { AreaBorder(area, state) }
+        }
+
         // Elements (text blocks, images) sit under the node cards.
         for (element in state.project.elements) {
             key(element.id) { ElementView(element, state) }
@@ -254,7 +260,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
         }
         val selectedArea = state.selectedArea?.takeIf { a -> state.selectedNodeIds.isEmpty() && state.shownProject.areas.any { it.id == a.id } }
         if (selectedArea != null && quiet) {
-            AreaResizeGrip(selectedArea, state)
+            AreaGrips(selectedArea, state)
             AreaQuickBarOverlay(state, selectedArea)
         }
         val selectedEdge = state.selectedEdgeId?.let { id -> state.shownProject.edges.find { it.id == id } }

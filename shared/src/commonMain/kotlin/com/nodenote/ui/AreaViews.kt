@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nodenote.export.MapSceneBuilder
 import com.nodenote.model.Area
+import com.nodenote.model.AreaHandle
 import com.nodenote.model.ColorBy
 import com.nodenote.model.Edge
 import com.nodenote.state.AppState
@@ -262,32 +264,109 @@ private fun AreaTitleEditor(state: AppState, area: Area, fontSp: Float, color: C
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 }
 
-/** Bottom-right handle of the selected area: drag to make the territory bigger or smaller (cards stay put). */
+/**
+ * Invisible bands along an area's outline (under the cards): click the border to select
+ * the area, double-click to rename it, drag it to move the area with everything in it.
+ */
 @Composable
-fun AreaResizeGrip(area: Area, state: AppState) {
+fun AreaBorder(area: Area, state: AppState) {
     val density = LocalDensity.current.density
-    val corner = state.worldToScreen(Offset(area.right, area.bottom))
-    val half = 11f * density
+    val topLeft = state.worldToScreen(Offset(area.x, area.y))
+    val bottomRight = state.worldToScreen(Offset(area.right, area.bottom))
+    val band = 12f * density
+    val w = bottomRight.x - topLeft.x
+    val h = bottomRight.y - topLeft.y
+    val left = topLeft.x - band / 2f
+    val top = topLeft.y - band / 2f
+    // Top, bottom, left, right.
+    BorderBand(area.id, state, left, top, w + band, band)
+    BorderBand(area.id, state, left, bottomRight.y - band / 2f, w + band, band)
+    BorderBand(area.id, state, left, top, band, h + band)
+    BorderBand(area.id, state, bottomRight.x - band / 2f, top, band, h + band)
+}
+
+@Composable
+private fun BorderBand(areaId: String, state: AppState, x: Float, y: Float, width: Float, height: Float) {
+    val density = LocalDensity.current.density
     Box(
         Modifier
-            .offset { IntOffset((corner.x - half).roundToInt(), (corner.y - half).roundToInt()) }
-            .size(22.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(PanelBackground.copy(alpha = 0.9f))
-            .border(1.dp, Accent, RoundedCornerShape(6.dp))
-            .pointerHoverIcon(PointerIcon.Crosshair)
-            .pointerInput(state, area.id) {
+            .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
+            .size((width / density).dp, (height / density).dp)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .pointerInput(state, areaId) {
+                detectTapGestures(
+                    onTap = { state.selectArea(areaId) },
+                    onDoubleTap = { state.startRenamingArea(areaId) },
+                )
+            }
+            .pointerInput(state, areaId) {
                 detectDragGestures(
-                    onDragStart = { state.pushUndo() },
+                    onDragStart = { state.beginAreaDrag(areaId) },
                     onDrag = { change, amount ->
                         change.consume()
-                        state.resizeArea(area.id, amount / (state.zoom * state.viewDensity))
+                        state.dragArea(amount / (state.zoom * state.viewDensity))
                     },
+                    onDragEnd = { state.endAreaDrag() },
+                    onDragCancel = { state.endAreaDrag() },
+                )
+            },
+    )
+}
+
+/** The selected area's eight grips, at its corners and the middles of its sides: drag one to resize from there (the cards stay put). */
+@Composable
+fun AreaGrips(area: Area, state: AppState) {
+    val topLeft = state.worldToScreen(Offset(area.x, area.y))
+    val bottomRight = state.worldToScreen(Offset(area.right, area.bottom))
+    val middle = (topLeft + bottomRight) / 2f
+    for (handle in AreaHandle.entries) {
+        val x = when {
+            handle.left -> topLeft.x
+            handle.right -> bottomRight.x
+            else -> middle.x
+        }
+        val y = when {
+            handle.top -> topLeft.y
+            handle.bottom -> bottomRight.y
+            else -> middle.y
+        }
+        key(handle) { AreaGrip(area.id, handle, Offset(x, y), state) }
+    }
+}
+
+@Composable
+private fun AreaGrip(areaId: String, handle: AreaHandle, at: Offset, state: AppState) {
+    val density = LocalDensity.current.density
+    val half = 12f * density // a 24dp target around a 10dp square
+    Box(
+        Modifier
+            .offset { IntOffset((at.x - half).roundToInt(), (at.y - half).roundToInt()) }
+            .size(24.dp)
+            .pointerHoverIcon(PointerIcon.Crosshair)
+            .pointerInput(state, areaId, handle) {
+                var dragged = Offset.Zero
+                detectDragGestures(
+                    onDragStart = {
+                        dragged = Offset.Zero
+                        state.beginAreaResize(areaId)
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        dragged += amount / (state.zoom * state.viewDensity)
+                        state.resizeArea(areaId, handle, dragged)
+                    },
+                    onDragEnd = { state.endAreaResize() },
+                    onDragCancel = { state.endAreaResize() },
                 )
             },
         contentAlignment = Alignment.Center,
     ) {
-        GlyphIcon(Glyph.Grip, Accent, 12.dp)
+        Box(
+            Modifier
+                .size(10.dp)
+                .background(PanelBackground, RoundedCornerShape(2.dp))
+                .border(1.5.dp, Accent, RoundedCornerShape(2.dp)),
+        )
     }
 }
 

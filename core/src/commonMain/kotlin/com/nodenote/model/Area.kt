@@ -3,6 +3,7 @@ package com.nodenote.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * A named territory on the board: a tinted region behind a group of cards ("Lead time",
@@ -84,4 +85,32 @@ fun Area.fittedTo(cards: List<Node>): Area {
     val right = cards.maxOf { it.x + it.width } + Area.PADDING
     val bottom = cards.maxOf { it.y + it.height } + Area.PADDING
     return copy(x = left, y = top, width = max(right - left, Area.MIN_WIDTH), height = max(bottom - top, Area.MIN_HEIGHT))
+}
+
+/** The eight grips of a selected area: its corners and the middles of its sides. */
+enum class AreaHandle(val left: Boolean, val top: Boolean, val right: Boolean, val bottom: Boolean) {
+    TopLeft(true, true, false, false),
+    Top(false, true, false, false),
+    TopRight(false, true, true, false),
+    Right(false, false, true, false),
+    BottomRight(false, false, true, true),
+    Bottom(false, false, false, true),
+    BottomLeft(true, false, false, true),
+    Left(true, false, false, false),
+}
+
+/**
+ * This area with the sides [handle] holds moved by ([dx], [dy]) in world units; the other
+ * sides stay put, and it never gets smaller than [Area.MIN_WIDTH] × [Area.MIN_HEIGHT].
+ */
+fun Area.resized(handle: AreaHandle, dx: Float, dy: Float): Area {
+    var l = x
+    var t = y
+    var r = right
+    var b = bottom
+    if (handle.left) l = min(x + dx, r - Area.MIN_WIDTH)
+    if (handle.right) r = max(right + dx, l + Area.MIN_WIDTH)
+    if (handle.top) t = min(y + dy, b - Area.MIN_HEIGHT)
+    if (handle.bottom) b = max(bottom + dy, t + Area.MIN_HEIGHT)
+    return copy(x = l, y = t, width = r - l, height = b - t)
 }

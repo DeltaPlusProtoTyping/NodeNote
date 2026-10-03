@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
 import com.nodenote.api.MessageUpdate
 import com.nodenote.model.Area
+import com.nodenote.model.AreaHandle
 import com.nodenote.model.Attachment
 import com.nodenote.model.BuiltinTypes
 import com.nodenote.model.CanvasElement
@@ -39,6 +40,7 @@ import com.nodenote.model.nowMillis
 import com.nodenote.model.privateAreaIds
 import com.nodenote.model.privateNodeIds
 import com.nodenote.model.rebase
+import com.nodenote.model.resized
 import com.nodenote.layout.RadialLayout
 import com.nodenote.sort.BoardHierarchy
 import com.nodenote.spell.Misspelling
@@ -1529,11 +1531,24 @@ class AppState(val session: Session) {
         areaDrag = null
     }
 
-    /** Moves an area's bottom-right corner by [delta] (world units); the cards stay put. Undo is pushed by the caller at drag start. */
-    fun resizeArea(id: String, delta: Offset) {
-        updateArea(id) {
-            it.copy(width = max(Area.MIN_WIDTH, it.width + delta.x), height = max(Area.MIN_HEIGHT, it.height + delta.y))
-        }
+    /** The area as it was when one of its grips was grabbed (resizing works from there, so the minimum size never drifts). */
+    private var resizeStart: Area? = null
+
+    /** A grip of an area was grabbed: one undo step for the whole drag. */
+    fun beginAreaResize(id: String) {
+        resizeStart = project.areas.find { it.id == id } ?: return
+        pushUndo()
+    }
+
+    /** [total] = how far the grip has been dragged since [beginAreaResize], in world units. The cards stay put. */
+    fun resizeArea(id: String, handle: AreaHandle, total: Offset) {
+        val start = resizeStart?.takeIf { it.id == id } ?: return
+        val r = start.resized(handle, total.x, total.y)
+        updateArea(id) { it.copy(x = r.x, y = r.y, width = r.width, height = r.height) }
+    }
+
+    fun endAreaResize() {
+        resizeStart = null
     }
 
     // ---- Color by (what the card colors mean; per device) ----

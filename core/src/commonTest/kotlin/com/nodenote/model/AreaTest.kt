@@ -87,6 +87,26 @@ class AreaTest {
     }
 
     @Test
+    fun anyGripResizesItsSidesAndKeepsTheOthers() {
+        val a = Area("r", x = 100f, y = 100f, width = 400f, height = 300f)
+        // Corners move two sides.
+        assertEquals(Area("r", x = 70f, y = 80f, width = 430f, height = 320f), a.resized(AreaHandle.TopLeft, -30f, -20f))
+        assertEquals(Area("r", x = 100f, y = 100f, width = 450f, height = 350f), a.resized(AreaHandle.BottomRight, 50f, 50f))
+        assertEquals(Area("r", x = 100f, y = 60f, width = 410f, height = 340f), a.resized(AreaHandle.TopRight, 10f, -40f))
+        assertEquals(Area("r", x = 90f, y = 100f, width = 410f, height = 310f), a.resized(AreaHandle.BottomLeft, -10f, 10f))
+        // Side middles move one side; the other direction is ignored.
+        assertEquals(Area("r", x = 100f, y = 100f, width = 400f, height = 360f), a.resized(AreaHandle.Bottom, 99f, 60f))
+        assertEquals(Area("r", x = 150f, y = 100f, width = 350f, height = 300f), a.resized(AreaHandle.Left, 50f, 99f))
+        // Never smaller than the minimum, and the opposite side doesn't move.
+        val squeezed = a.resized(AreaHandle.Left, 1000f, 0f)
+        assertEquals(Area.MIN_WIDTH, squeezed.width)
+        assertEquals(a.right, squeezed.right)
+        val flat = a.resized(AreaHandle.Top, 0f, 1000f)
+        assertEquals(Area.MIN_HEIGHT, flat.height)
+        assertEquals(a.bottom, flat.bottom)
+    }
+
+    @Test
     fun anEmptyAreaPatchIsEmpty() {
         assertTrue(BoardDiff.diff(board, board).isEmpty)
         assertTrue(!BoardPatch(deleteAreas = listOf("x")).isEmpty)

@@ -47,7 +47,8 @@ private val shortcutGroups = listOf(
         "F2" to "Rename the selected node",
         "Drag the card's corner" to "Make the node bigger or smaller",
         "Ctrl + G" to "Area around the selected cards (none selected: drag a box)",
-        "Drag an area's name" to "Move the area with everything in it",
+        "Drag an area's name or border" to "Move the area with everything in it",
+        "Drag an area's corner or side middle" to "Resize it (the cards stay put)",
         "Click a link" to "Say what it means: Causes, Solves, Blocks…",
     ),
     "Chat" to listOf(
@@ -85,7 +86,7 @@ private val shortcutGroups = listOf(
         "Drag on empty space" to "Box-select",
         "Ctrl + click" to "Toggle item in selection",
         "Click empty space" to "Deselect — the chat shows the whole board",
-        "Click an area's name" to "Select the area (rename, color, private, tidy inside)",
+        "Click an area's name or border" to "Select the area (rename, color, private, tidy inside)",
     ),
     "Saving" to listOf(
         "(automatic)" to "Every edit and message syncs to the server as you go",
