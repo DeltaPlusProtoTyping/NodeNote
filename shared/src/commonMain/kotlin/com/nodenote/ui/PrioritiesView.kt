@@ -78,11 +78,16 @@ fun PrioritiesView(state: AppState, modifier: Modifier = Modifier) {
 /** Work-item types that should get an importance and effort even with no status set. */
 private val RateableTypes = setOf("Issue", "Improvement", "Idea", "ActionItem", "Project", "Decision")
 
+/** Open work that should carry an importance and an effort: what the PICK chart and the rating board show. */
+internal fun rateableCards(state: AppState): List<Node> = state.shownProject.nodes.filter {
+    it.isOpenWork && (it.status.isActive || it.type in RateableTypes || it.importance > 0 || it.effort > 0)
+}
+
 @Composable
 private fun PickView(state: AppState, modifier: Modifier) {
-    val open = state.shownProject.nodes.filter { it.isOpenWork }
+    val open = rateableCards(state)
     val byPick = open.filter { it.pick != null }.groupBy { it.pick!! }
-    val unrated = open.filter { it.pick == null && (it.status.isActive || it.type in RateableTypes || it.importance > 0 || it.effort > 0) }
+    val unrated = open.filter { it.pick == null }
     var only by remember { mutableStateOf<Pick?>(null) }
     val clipboard = LocalClipboardManager.current
 
@@ -95,6 +100,8 @@ private fun PickView(state: AppState, modifier: Modifier) {
                     color = TextFaint,
                     modifier = Modifier.weight(1f),
                 )
+                CompactOutlinedButton("Rate by placing", onClick = { state.rateBoardOpen = true })
+                Spacer(Modifier.width(6.dp))
                 if (byPick.isNotEmpty()) {
                     CompactOutlinedButton("Copy as list", onClick = {
                         clipboard.setText(AnnotatedString(pickListText(state, byPick)))
@@ -240,7 +247,7 @@ private fun PriorityRow(state: AppState, node: Node, trailing: (@Composable () -
 private fun pickListText(state: AppState, byPick: Map<Pick, List<Node>>): String = buildString {
     appendLine("Priorities — ${state.project.name}")
     for (pick in Pick.entries) {
-        val group = byPick[pick].orEmpty().filterNot { it.isPrivate }
+        val group = byPick[pick].orEmpty().filterNot { it.id in state.privateIds }
             .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.effort })
         if (group.isEmpty()) continue
         appendLine()
@@ -292,7 +299,7 @@ private fun WinsView(state: AppState, modifier: Modifier) {
                                 fontSize = 11.sp,
                                 color = NodeStatus.Solved.color,
                             )
-                            if (node.isPrivate) {
+                            if (node.id in state.privateIds) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     GlyphIcon(Glyph.Lock, PrivateAmber, 9.dp)
                                     Text(" private", fontSize = 9.sp, color = TextFaint)
@@ -309,7 +316,7 @@ private fun WinsView(state: AppState, modifier: Modifier) {
 
 private fun winsText(state: AppState, wins: List<Node>): String = buildString {
     appendLine("Wins — ${state.project.name}")
-    for (n in wins.filterNot { it.isPrivate }) {
+    for (n in wins.filterNot { it.id in state.privateIds }) {
         val day = if (n.solvedAt > 0) formatStamp(n.solvedAt).substringBeforeLast(' ') else "Solved"
         appendLine("- $day: ${n.title.trim()} (${state.nodeTypeOf(n.type).label})")
     }

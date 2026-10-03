@@ -48,6 +48,18 @@ class SavedFormatTest {
          "edges":[],"elements":[],"customNodeTypes":[],"customEdgeTypes":[]}
     """.trimIndent()
 
+    /** October 2026: areas (named territories behind groups of cards). */
+    private val boardV4 = """
+        {"id":"b1","name":"Shop floor","nodes":[
+          {"id":"n1","type":"Issue","title":"Quoting takes too long","description":"","x":10.0,"y":20.0,
+           "width":190.0,"height":92.0,"properties":{},"attachments":[],"status":"Open","importance":0,"owner":"",
+           "summary":"","createdAt":1790000000000,"createdBy":"Ben","keywords":"","effort":0,
+           "private":false,"solvedAt":0,"scale":1.0}],
+         "edges":[],"elements":[],"customNodeTypes":[],"customEdgeTypes":[],
+         "areas":[{"id":"a1","title":"Sales pipeline","x":-40.0,"y":-60.0,"width":300.0,"height":240.0,
+           "color":4284194047,"private":true,"createdAt":1791000000000,"createdBy":"Ben"}]}
+    """.trimIndent()
+
     private val messageV2 = """
         {"id":"m1","boardId":"b1","nodeId":"n1","author":"Nick","text":"see [[Spindle warm-up]]","kind":"Decision",
          "importance":9,"linkedNodeIds":["n1"],"done":false,"createdAt":1790000000000,"editedAt":0,"deleted":false,"seq":42}
@@ -84,6 +96,26 @@ class SavedFormatTest {
         // The flag is stored as "private" (the Kotlin name can't be).
         val encoded = ApiJson.encodeToString(Node.serializer(), n)
         assertEquals(true, "\"private\":true" in encoded, encoded)
+    }
+
+    @Test
+    fun boardsFromBeforeAreasHaveNone() {
+        assertEquals(emptyList(), ApiJson.decodeFromString(Project.serializer(), boardV2).areas)
+        assertEquals(emptyList(), ApiJson.decodeFromString(Project.serializer(), boardV3).areas)
+    }
+
+    @Test
+    fun boardsWithAreasLoad() {
+        val p = ApiJson.decodeFromString(Project.serializer(), boardV4)
+        val a = p.areas.single()
+        assertEquals("Sales pipeline", a.title)
+        assertEquals(300f, a.width)
+        assertEquals(0xFF5B9CFF, a.color)
+        assertEquals(true, a.isPrivate)
+        assertEquals("Ben", a.createdBy)
+        // Stored as "private", like a node's flag; the card inside is private through its area.
+        assertEquals(true, "\"private\":true" in ApiJson.encodeToString(Area.serializer(), a))
+        assertEquals(setOf("n1"), p.privateNodeIds())
     }
 
     @Test

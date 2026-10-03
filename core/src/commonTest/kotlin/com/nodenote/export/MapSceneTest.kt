@@ -1,5 +1,7 @@
 package com.nodenote.export
 
+import com.nodenote.model.Area
+import com.nodenote.model.ColorBy
 import com.nodenote.model.Edge
 import com.nodenote.model.Node
 import com.nodenote.model.Project
@@ -70,6 +72,40 @@ class MapSceneTest {
         val arrowed = assertNotNull(MapSceneBuilder.build(typed, MapSceneOptions(showLegend = false, showTitleBlock = false))).scene
         assertEquals(0, plain.items.count { it is ScenePolygon })
         assertEquals(1, arrowed.items.count { it is ScenePolygon })
+    }
+
+    @Test
+    fun areasAreDrawnWithTheirNamesAndAPrivateOneTakesItsCardsAlong() {
+        val sales = Area("a1", "Sales pipeline", x = -60f, y = -80f, width = 600f, height = 220f)
+        val push = Area("a2", "Pushback", x = -40f, y = 260f, width = 300f, height = 200f, isPrivate = true)
+        val withAreas = board.copy(nodes = board.nodes.map { it.copy(isPrivate = false) }, areas = listOf(sales, push))
+        val options = MapSceneOptions(showLegend = false, showTitleBlock = false)
+
+        val scene = assertNotNull(MapSceneBuilder.build(withAreas, options)).scene
+        assertTrue("Sales pipeline" in texts(scene))
+        // The private area hides, and so does the card inside it (no longer private on its own).
+        assertFalse("Pushback" in texts(scene))
+        assertFalse(texts(scene).any { "Pushback from Kurt" in it })
+        // Territories sit under the links and cards: the first thing drawn is the area.
+        val first = scene.items.first() as SceneRect
+        assertEquals(600f, first.width)
+        assertEquals(18f, first.radius)
+
+        val all = assertNotNull(MapSceneBuilder.build(withAreas, options.copy(includePrivate = true))).scene
+        assertTrue("Pushback" in texts(all) && "PRIVATE" in texts(all))
+        assertTrue(texts(all).any { "Pushback from Kurt" in it })
+    }
+
+    @Test
+    fun colorByTintsTheCardsAndTheLegendFollows() {
+        val plain = assertNotNull(MapSceneBuilder.build(board, MapSceneOptions(showTitleBlock = false))).scene
+        val hot = assertNotNull(MapSceneBuilder.build(board, MapSceneOptions(showTitleBlock = false, colorBy = ColorBy.Importance))).scene
+        fun cardFills(scene: Scene) = scene.items.filterIsInstance<SceneRect>().filter { it.radius == 10f }.map { it.fill }
+        assertTrue(cardFills(plain).all { it == MapStyle.Light.card })
+        assertTrue(cardFills(hot).any { it != MapStyle.Light.card }, "rated cards are tinted")
+        assertTrue("LEGEND · IMPORTANCE" in texts(hot))
+        assertTrue("9–10 critical" in texts(hot) && "7–8" in texts(hot))
+        assertFalse("Goal" in texts(hot)) // the legend lists the scale, not the types
     }
 
     @Test

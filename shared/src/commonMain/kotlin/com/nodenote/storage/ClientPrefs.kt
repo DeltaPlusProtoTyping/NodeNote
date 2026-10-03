@@ -1,5 +1,6 @@
 package com.nodenote.storage
 
+import com.nodenote.model.ColorBy
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -47,6 +48,13 @@ object ClientPrefs {
         get() = ProjectStorage.readPrefs("presenting.txt")?.trim() == "1"
         set(value) {
             ProjectStorage.writePrefs("presenting.txt", if (value) "1" else "0")
+        }
+
+    /** What the card colors mean on this device's map ("Color by"). */
+    var colorBy: ColorBy
+        get() = ProjectStorage.readPrefs("colorby.txt")?.trim()?.let { v -> ColorBy.entries.find { it.name == v } } ?: ColorBy.Type
+        set(value) {
+            ProjectStorage.writePrefs("colorby.txt", value.name)
         }
 
     /** Words this person told the spell checker to accept (per device). */

@@ -88,7 +88,8 @@ object MapExporter {
             else -> null
         }
         val only = if (settings.region == ExportRegion.SelectedNodes) state.selectedNodeIds else null
-        val count = state.project.nodes.count { (settings.includePrivate || !it.isPrivate) && (only == null || it.id in only) }
+        val hidden = if (settings.includePrivate) emptySet() else state.privateIds
+        val count = state.project.nodes.count { it.id !in hidden && (only == null || it.id in only) }
         val options = MapSceneOptions(
             style = if (settings.theme == ExportTheme.Light) MapStyle.Light else MapStyle.Dark,
             transparent = settings.transparentBackground,
@@ -108,6 +109,7 @@ object MapExporter {
             titleBlockX = settings.titleBlockX,
             titleBlockY = settings.titleBlockY,
             subtitle = "$count node${if (count == 1) "" else "s"} · ${formatDate(nowMillis())}",
+            colorBy = state.colorBy,
         )
         return MapSceneBuilder.build(state.project, options, if (withPixels) ::pixelsOf else { _ -> null })
     }

@@ -9,10 +9,12 @@ import com.nodenote.model.NodeLinkRegex
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.Pick
 import com.nodenote.model.Project
+import com.nodenote.model.areaOf
 import com.nodenote.model.isOpenWork
 import com.nodenote.model.pick
 import com.nodenote.model.edgeType
 import com.nodenote.model.nodeType
+import com.nodenote.model.privateNodeIds
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -147,6 +149,9 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
         private val project = board.project
         private val files = VaultNames.nodeFiles(project, folder)
         private val nodesById = project.nodes.associateBy { it.id }
+        /** Private cards and everything in a private area — marked private in the notes. */
+        private val privateIds = project.privateNodeIds()
+        private fun isPrivate(node: Node) = node.id in privateIds
         /** Same matching rule as core's `resolveNodeLinks`: trimmed, case-insensitive title. */
         private val nodesByTitle = project.nodes.associateBy { it.title.trim().lowercase() }
 
@@ -184,7 +189,8 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .apply { if (node.importance > 0) raw("importance", node.importance) }
                 .apply { if (node.effort > 0) raw("effort", node.effort) }
                 .apply { if (node.solvedAt > 0) raw("solved", date(node.solvedAt)) }
-                .apply { if (node.isPrivate) raw("private", true) }
+                .apply { if (isPrivate(node)) raw("private", true) }
+                .apply { project.areaOf(node)?.title?.trim()?.takeIf { it.isNotEmpty() }?.let { str("area", it) } }
                 .apply { if (node.owner.isNotBlank()) str("owner", node.owner.trim()) }
                 .apply { if (node.keywords.isNotBlank()) str("keywords", node.keywords.trim()) }
                 .apply { if (node.createdAt > 0) raw("created", date(node.createdAt)) }
@@ -192,7 +198,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .raw("messages", own.size)
                 .raw("key_details", keyDetails.size)
                 .apply { if (summary.archived) raw("archived", true) }
-                .tags(listOfNotNull("nodenote", typeTag(node), statusTag(node.status), "private".takeIf { node.isPrivate }))
+                .tags(listOfNotNull("nodenote", typeTag(node), statusTag(node.status), "private".takeIf { isPrivate(node) }))
 
             val connections = project.edges.mapNotNull { edge ->
                 val type = project.edgeType(edge.type).label
@@ -281,7 +287,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                             if (n.status != NodeStatus.None) add(n.status.label)
                             if (n.importance > 0) add("★${n.importance}")
                             if (n.effort > 0) add("effort ${n.effort}")
-                            if (n.isPrivate) add("private")
+                            if (isPrivate(n)) add("private")
                             byHome[n.id]?.size?.let { add(if (it == 1) "1 message" else "$it messages") }
                         }
                         "- ${link(n)}" + extras.joinToString("") { " · $it" }
@@ -295,13 +301,21 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
             val recent = live.asReversed().take(RECENT_ACTIVITY)
             val quickWins = project.nodes.filter { it.isOpenWork && it.pick == Pick.QuickWin }
                 .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.effort }.thenBy { it.title.lowercase() })
-                .map { n -> "- ${link(n)} · importance ${n.importance}, effort ${n.effort}" + (if (n.isPrivate) " · private" else "") }
+                .map { n -> "- ${link(n)} · importance ${n.importance}, effort ${n.effort}" + (if (isPrivate(n)) " · private" else "") }
             val wins = project.nodes.filter { it.status == NodeStatus.Solved }
                 .sortedWith(compareByDescending<Node> { it.solvedAt }.thenBy { it.title.lowercase() })
                 .map { n ->
                     val day = if (n.solvedAt > 0) date(n.solvedAt) else "Solved"
-                    "- $day · ${link(n)} · ${plain(project.nodeType(n.type).label)}" + (if (n.isPrivate) " · private" else "")
+                    "- $day · ${link(n)} · ${plain(project.nodeType(n.type).label)}" + (if (isPrivate(n)) " · private" else "")
                 }
+
+            // The board's territories, top to bottom, each with the cards that live in it.
+            val areas = project.areas.sortedWith(compareBy({ it.y }, { it.x })).map { area ->
+                val cards = project.nodes.filter { project.areaOf(it)?.id == area.id }.sortedBy { it.title.lowercase() }
+                "- **${plain(area.title.trim().ifEmpty { "Untitled area" })}**" +
+                    (if (area.isPrivate) " · private" else "") +
+                    (if (cards.isEmpty()) "" else ": " + cards.joinToString(", ") { link(it) })
+            }
 
             return document(
                 fm,
@@ -309,6 +323,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 if (summary.archived) "> [!note] Archived board" else null,
                 // The map itself (written next to the notes by VaultWriter; private nodes left out).
                 if (VaultMap.hasContent(project)) "![[$folder/${VaultMap.fileName(folder)}]]" else null,
+                section("Areas", areas),
                 inbox.takeIf { it.isNotEmpty() }?.let {
                     "Unfiled: ${wikiLink("$folder/${VaultNames.INBOX}", VaultNames.INBOX)} (${it.size})"
                 },

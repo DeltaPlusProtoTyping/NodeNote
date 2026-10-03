@@ -60,6 +60,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nodenote.model.BuiltinTypes
+import com.nodenote.model.ColorBy
 import com.nodenote.model.Project
 import com.nodenote.model.edgeType
 import com.nodenote.state.AppState
@@ -79,10 +80,11 @@ import kotlin.math.min
 /**
  * The graph editor viewport.
  *
- * Rendering is two layers inside one Box:
- *  1. A Compose [Canvas] that draws the dot grid, all edges, and the dashed
- *     "pending connection" line.
+ * Rendering is layers inside one Box:
+ *  1. A Compose [Canvas] that draws the dot grid, the areas' tinted territories,
+ *     all edges, and the dashed "pending connection" line.
  *  2. One [NodeCard] composable per node, absolutely positioned on top.
+ *  3. Area names (each the handle of its area) and the floating toolbars.
  *
  * The camera transform is `screen = world * (zoom * density) + pan` (see
  * [AppState]); both layers apply the same transform so cards and edge endpoints
@@ -95,7 +97,9 @@ import kotlin.math.min
  *  - Left-drag on a node moves the selection (NodeCard consumes it first);
  *    left-drag on empty canvas draws a box-selection marquee. Touch drag pans,
  *    so the same code works on iOS.
- *  - Tap on empty canvas deselects / cancels a pending connection.
+ *  - Tap on empty canvas (inside an area too) deselects / cancels a pending
+ *    connection; a tap on a link selects the link. An area is selected by its name.
+ *  - After "Area" with nothing selected, the box-drag draws the new area instead.
  */
 @Composable
 fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
@@ -116,7 +120,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
     LaunchedEffect(state, canvasReady, state.syncedProject != null) {
         if (canvasReady && state.syncedProject != null && state.zoomToFitWhenSized) {
             state.zoomToFitWhenSized = false
-            if (state.project.nodes.isNotEmpty() || state.project.elements.isNotEmpty()) {
+            if (state.project.nodes.isNotEmpty() || state.project.elements.isNotEmpty() || state.project.areas.isNotEmpty()) {
                 state.zoomToFit()
                 if (state.zoom > 1f) state.resetZoomKeepingCenter()
             }
@@ -141,14 +145,14 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        if (change.type == PointerType.Touch) {
+                        if (change.type == PointerType.Touch && !state.drawingArea) {
                             state.pan += dragAmount
                         } else {
                             val start = state.marquee?.first ?: (change.position - dragAmount)
                             state.marquee = start to change.position
                         }
                     },
-                    onDragEnd = { state.applyMarqueeSelection() },
+                    onDragEnd = { state.finishMarquee() },
                     onDragCancel = { state.marquee = null },
                 )
             }
@@ -156,11 +160,15 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             // Double-tap on empty canvas: quick-add a node of the last-used type.
             .pointerInput(state) {
                 detectTapGestures(
-                    onTap = {
-                        state.clearSelection()
+                    onTap = { pos ->
                         state.cancelConnection()
+                        if (!state.drawingArea) {
+                            // Inside an area too: empty space deselects; the area's name is its handle.
+                            val edge = state.edgeAt(pos)
+                            if (edge != null) state.selectEdge(edge) else state.clearSelection()
+                        }
                     },
-                    onDoubleTap = { pos -> state.addNodeAt(state.screenToWorld(pos)) },
+                    onDoubleTap = { pos -> if (!state.drawingArea) state.addNodeAt(state.screenToWorld(pos)) },
                 )
             }
             // Raw event loop for what the gesture detectors don't cover:
@@ -218,6 +226,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
     ) {
         Canvas(Modifier.fillMaxSize()) {
             drawDotGrid(state.pan, state.zoom, density)
+            drawAreas(state)
             drawEdges(state, textMeasurer)
             drawPendingConnection(state)
             drawMarquee(state)
@@ -232,14 +241,29 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             key(node.id) { NodeCard(node, state) }
         }
 
-        val selected = state.selectedNode
-        if (selected != null && selected.id !in state.hiddenNodeIds && state.connectFromId == null && state.marquee == null) {
-            NodeQuickBarOverlay(state, selected)
+        // Area names on top of the cards: each one is its area's handle (and at a far zoom, the big name).
+        for (area in state.shownProject.areas.sortedByDescending { it.width * it.height }) {
+            key("area-" + area.id) { AreaLabel(area, state) }
         }
 
-        if (state.presenting) PresentingBadge(state, Modifier.align(Alignment.TopStart).padding(10.dp))
+        val selected = state.selectedNode
+        val quiet = state.connectFromId == null && state.marquee == null
+        if (selected != null && selected.id !in state.hiddenNodeIds && quiet) {
+            NodeQuickBarOverlay(state, selected)
+        }
+        val selectedArea = state.selectedArea?.takeIf { a -> state.selectedNodeIds.isEmpty() && state.shownProject.areas.any { it.id == a.id } }
+        if (selectedArea != null && quiet) {
+            AreaResizeGrip(selectedArea, state)
+            AreaQuickBarOverlay(state, selectedArea)
+        }
+        val selectedEdge = state.selectedEdgeId?.let { id -> state.shownProject.edges.find { it.id == id } }
+        if (selectedEdge != null && quiet) LinkQuickBarOverlay(state, selectedEdge)
 
-        if (state.project.nodes.isEmpty() && state.project.elements.isEmpty()) {
+        if (state.presenting) PresentingBadge(state, Modifier.align(Alignment.TopStart).padding(10.dp))
+        if (state.colorBy != ColorBy.Type) LensLegend(state, Modifier.align(Alignment.TopEnd).padding(10.dp))
+        if (state.drawingArea) DrawingAreaHint(state, Modifier.align(Alignment.TopCenter).padding(10.dp))
+
+        if (state.project.nodes.isEmpty() && state.project.elements.isEmpty() && state.project.areas.isEmpty()) {
             EmptyCanvasHint(Modifier.align(Alignment.Center))
         }
     }
@@ -296,6 +320,7 @@ private fun DrawScope.drawEdges(state: AppState, textMeasurer: TextMeasurer) {
         zoom = state.zoom,
         selectedIds = state.selectedNodeIds,
         textMeasurer = textMeasurer,
+        selectedEdgeId = state.selectedEdgeId,
     )
 }
 
@@ -317,6 +342,7 @@ internal fun DrawScope.drawProjectEdges(
     textMeasurer: TextMeasurer,
     style: EdgeStyle = liveEdgeStyle(),
     showLabels: Boolean = true,
+    selectedEdgeId: String? = null,
 ) {
     val nodesById = project.nodes.associateBy { it.id }
 
@@ -330,13 +356,14 @@ internal fun DrawScope.drawProjectEdges(
         val start = rectEdgePoint(fromCenter, from.width / 2f * k, from.height / 2f * k, toCenter)
         val end = rectEdgePoint(toCenter, to.width / 2f * k, to.height / 2f * k, fromCenter)
 
-        val highlighted = edge.fromNodeId in selectedIds || edge.toNodeId in selectedIds
+        val picked = edge.id == selectedEdgeId
+        val highlighted = picked || edge.fromNodeId in selectedIds || edge.toNodeId in selectedIds
         val color = if (highlighted) style.lineHighlight else style.line
         drawLine(
             color = color,
             start = start,
             end = end,
-            strokeWidth = (1.4f * k).coerceIn(1f, 3f),
+            strokeWidth = (1.4f * k).coerceIn(1f, 3f) * if (picked) 2.2f else 1f,
             cap = StrokeCap.Round,
         )
         val mid = (start + end) / 2f
@@ -482,6 +509,7 @@ private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
         EmptyHintRow("Rate", "mark key details 1–10 as you write them")
         EmptyHintRow("Navigate", "middle- or right-drag to pan · scroll to zoom")
         EmptyHintRow("Connect", "drag a node's port dot to another node")
+        EmptyHintRow("Areas", "select cards, then Area (Ctrl+G) to name a territory")
     }
 }
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -64,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.NodeTypeDef
+import com.nodenote.model.areaOf
 import com.nodenote.state.AppState
 import com.nodenote.state.LocalAppState
 import com.nodenote.theme.Accent
@@ -87,7 +89,9 @@ val PrivateAmber = Color(0xFFE5B25B)
  * the same card, text and all, just larger. graphicsLayer also transforms pointer
  * input, so hit testing and drag deltas match what's on screen at any zoom.
  *
- * The card grows to fit its whole title (see [AppState.fitNodeHeight]).
+ * The card grows to fit its whole title (see [AppState.fitNodeHeight]). Under a "Color by"
+ * other than type, the whole card takes the lens color; zoomed far out, cards inside an
+ * area step back so the area names read first.
  */
 @Composable
 fun NodeCard(node: Node, state: AppState) {
@@ -96,6 +100,8 @@ fun NodeCard(node: Node, state: AppState) {
     val shape = RoundedCornerShape(10.dp)
     // On-screen size of one card unit.
     val k = state.zoom * node.scale
+    val tint = state.lens.colorOf(node)?.let { Color(it) }
+    val receded = state.zoom < AREA_FAR_ZOOM && !selected && state.shownProject.areaOf(node) != null
 
     Box(
         Modifier
@@ -107,16 +113,18 @@ fun NodeCard(node: Node, state: AppState) {
                 scaleX = k
                 scaleY = k
                 transformOrigin = TransformOrigin(0f, 0f)
+                alpha = if (receded) 0.5f else 1f
             }
             .size((node.width / node.scale).dp, (node.height / node.scale).dp)
             .shadow(if (selected) 10.dp else 4.dp, shape)
-            .background(PanelBackgroundRaised, shape)
+            .background(tint?.copy(alpha = 0.22f)?.compositeOver(PanelBackgroundRaised) ?: PanelBackgroundRaised, shape)
             .border(
-                width = if (selected || isConnectSource) 1.5.dp else 1.dp,
+                width = if (selected || isConnectSource || tint != null) 1.5.dp else 1.dp,
                 color = when {
                     selected -> Accent
                     isConnectSource -> Accent.copy(alpha = 0.7f)
                     node.isPrivate -> PrivateAmber.copy(alpha = 0.55f)
+                    tint != null -> tint.copy(alpha = 0.85f)
                     else -> PanelBorder
                 },
                 shape = shape,
@@ -166,7 +174,7 @@ fun NodeCard(node: Node, state: AppState) {
         // nodes stay big).
         if (k < FAR_ZOOM && state.editingNodeId != node.id) {
             Row(Modifier.fillMaxSize().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size((10f / state.zoom).coerceAtMost(40f).dp).background(node.status.takeIf { it != NodeStatus.None }?.color ?: typeDef.color, CircleShape))
+                Box(Modifier.size((10f / state.zoom).coerceAtMost(40f).dp).background(tint ?: node.status.takeIf { it != NodeStatus.None }?.color ?: typeDef.color, CircleShape))
                 Spacer(Modifier.width(6.dp))
                 Text(
                     node.title.ifBlank { "(untitled)" },

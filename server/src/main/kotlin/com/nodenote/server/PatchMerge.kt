@@ -1,6 +1,7 @@
 package com.nodenote.server
 
 import com.nodenote.api.ApiJson
+import com.nodenote.model.Area
 import com.nodenote.model.BoardPatch
 import com.nodenote.model.CanvasElement
 import com.nodenote.model.Edge
@@ -38,6 +39,7 @@ object PatchMerge {
             upsertElements = complete(patch.upsertElements, sent["upsertElements"], current.elements, CanvasElement.serializer()) { it.id },
             upsertNodeTypes = complete(patch.upsertNodeTypes, sent["upsertNodeTypes"], current.customNodeTypes, NodeTypeDef.serializer()) { it.id },
             upsertEdgeTypes = complete(patch.upsertEdgeTypes, sent["upsertEdgeTypes"], current.customEdgeTypes, EdgeTypeDef.serializer()) { it.id },
+            upsertAreas = complete(patch.upsertAreas, sent["upsertAreas"], current.areas, Area.serializer()) { it.id },
         )
     }
 

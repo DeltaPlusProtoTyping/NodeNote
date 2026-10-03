@@ -1,6 +1,7 @@
 package com.nodenote.server
 
 import com.nodenote.api.BoardSummary
+import com.nodenote.model.Area
 import com.nodenote.model.BoardPatch
 import com.nodenote.model.Edge
 import com.nodenote.model.MessageKind
@@ -107,6 +108,33 @@ class VaultTest {
         assertTrue("Label the bins" in map)
         assertFalse("Pushback" in map)
         assertTrue("## Quick wins\n\n- [[Wins/Label the bins|Label the bins]] · importance 7, effort 2" in index, index)
+    }
+
+    @Test
+    fun areasReachTheVaultAndAPrivateOneMarksItsCards() = serverTest {
+        val board = createBoard("Areas")
+        val quoting = node("a", "Quoting takes too long").copy(x = 0f, y = 0f)
+        val pricing = node("b", "Pricing", createdAt = 2).copy(x = 0f, y = 200f)
+        val kurt = node("c", "Pushback from Kurt", createdAt = 3).copy(x = 600f, y = 0f)
+        val sales = Area("s", "Sales pipeline", x = -40f, y = -80f, width = 300f, height = 420f)
+        val push = Area("p", "Pushback", x = 560f, y = -80f, width = 300f, height = 260f, isPrivate = true)
+        patch(board.id, 1, BoardPatch(upsertNodes = listOf(quoting, pricing, kurt), upsertAreas = listOf(sales, push)))
+        rebuild()
+
+        val folder = vaultDir.resolve("Areas")
+        val index = folder.resolve("Areas.md").readText()
+        assertTrue("## Areas\n\n- **Sales pipeline**: [[Areas/Pricing|Pricing]], [[Areas/Quoting takes too long|Quoting takes too long]]" in index, index)
+        assertTrue("- **Pushback** · private: [[Areas/Pushback from Kurt|Pushback from Kurt]]" in index, index)
+        val quotingNote = folder.resolve("Quoting takes too long.md").readText()
+        assertTrue("area: \"Sales pipeline\"" in quotingNote, quotingNote)
+        assertFalse("private: true" in quotingNote, quotingNote)
+        // Not marked private itself, but it sits in a private area.
+        val kurtNote = folder.resolve("Pushback from Kurt.md").readText()
+        assertTrue("private: true" in kurtNote, kurtNote)
+        // The map shows the public area and its cards, not the private one.
+        val map = folder.resolve("Areas map.svg").readText()
+        assertTrue("Sales pipeline" in map && "Quoting takes too long" in map)
+        assertFalse("Pushback" in map)
     }
 
     @Test

@@ -7,14 +7,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
 import com.nodenote.api.MessageUpdate
+import com.nodenote.model.Area
 import com.nodenote.model.Attachment
 import com.nodenote.model.BuiltinTypes
 import com.nodenote.model.CanvasElement
+import com.nodenote.model.ColorBy
 import com.nodenote.model.Edge
 import com.nodenote.model.EdgeTypeDef
 import com.nodenote.model.ElementKind
 import com.nodenote.model.ExportPreset
 import com.nodenote.model.ExportSettings
+import com.nodenote.model.Lens
 import com.nodenote.model.Message
 import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
@@ -22,13 +25,19 @@ import com.nodenote.model.NodeLinkRegex
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.NodeTypeDef
 import com.nodenote.model.Project
+import com.nodenote.model.areaOf
+import com.nodenote.model.areasInside
+import com.nodenote.model.cardsIn
 import com.nodenote.model.clampImportance
 import com.nodenote.model.edgeType
+import com.nodenote.model.fittedTo
 import com.nodenote.model.mentionsIn
 import com.nodenote.model.mentionsWord
 import com.nodenote.model.newId
 import com.nodenote.model.nodeType
 import com.nodenote.model.nowMillis
+import com.nodenote.model.privateAreaIds
+import com.nodenote.model.privateNodeIds
 import com.nodenote.model.rebase
 import com.nodenote.layout.RadialLayout
 import com.nodenote.sort.BoardHierarchy
@@ -40,6 +49,7 @@ import com.nodenote.model.resolveNodeLinks
 import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.PresetStore
 import com.nodenote.storage.RecentTypeStore
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -140,6 +150,9 @@ class AppState(val session: Session) {
         if (freshNodeId != null && freshNodeId !in valid) freshNodeId = null
         if (editingElementId != null && editingElementId !in valid) editingElementId = null
         if (connectFromId != null && connectFromId !in valid) connectFromId = null
+        if (selectedAreaId != null && project.areas.none { it.id == selectedAreaId }) selectedAreaId = null
+        if (editingAreaId != null && project.areas.none { it.id == editingAreaId }) editingAreaId = null
+        if (selectedEdgeId != null && project.edges.none { it.id == selectedEdgeId }) selectedEdgeId = null
     }
 
     // ---- Server board lifecycle ----
@@ -305,7 +318,7 @@ class AppState(val session: Session) {
 
     /** True when any modal is open — used to gate canvas/editing shortcuts. */
     val anyDialogOpen: Boolean
-        get() = exportDialogOpen || shortcutsOpen || newTypeKind != null
+        get() = exportDialogOpen || shortcutsOpen || newTypeKind != null || rateBoardOpen
 
     // ---- Right panel (dp). Resizable by dragging its inner border, collapsible. ----
 
@@ -331,7 +344,8 @@ class AppState(val session: Session) {
     // ---- Presenting ----
     // Private nodes are true but not for everyone's eyes. While presenting (a per-device
     // switch that survives reloads), they, their connections and their chat disappear from
-    // the map, the lists and the feed, so the screen can be shared.
+    // the map, the lists and the feed, so the screen can be shared. A private area takes
+    // everything inside it along.
 
     var presenting by mutableStateOf(ClientPrefs.presenting)
         private set
@@ -343,6 +357,7 @@ class AppState(val session: Session) {
             val hidden = hiddenNodeIds
             selectedNodeIds = selectedNodeIds.filterTo(mutableSetOf()) { it !in hidden }
             if (editingNodeId in hidden) editingNodeId = null
+            dropHiddenSelection()
         }
         status = if (presenting) "Presenting: private nodes are hidden" else "Private nodes are visible again"
     }
@@ -354,19 +369,39 @@ class AppState(val session: Session) {
         get() {
             val p = project
             shownCache?.let { if (it.source === p && it.presenting == presenting) return it }
-            val hidden = if (presenting) p.nodes.filter { it.isPrivate }.mapTo(HashSet()) { it.id } else emptySet()
-            val visible = if (hidden.isEmpty()) p else p.copy(
+            val hidden = if (presenting) p.privateNodeIds() else emptySet()
+            val hiddenAreas = if (presenting) p.privateAreaIds() else emptySet()
+            val visible = if (hidden.isEmpty() && hiddenAreas.isEmpty()) p else p.copy(
                 nodes = p.nodes.filter { it.id !in hidden },
                 edges = p.edges.filter { it.fromNodeId !in hidden && it.toNodeId !in hidden },
+                areas = p.areas.filter { it.id !in hiddenAreas },
             )
             return Shown(p, presenting, visible, hidden).also { shownCache = it }
         }
 
-    /** The board as it may be shown right now: [project] minus private nodes while presenting. */
+    /** The board as it may be shown right now: [project] minus private nodes and areas while presenting. */
     val shownProject: Project get() = shown.project
 
     /** Nodes hidden right now (the private ones, while presenting). */
     val hiddenNodeIds: Set<String> get() = shown.hidden
+
+    private var privateCache: Pair<Project, Set<String>>? = null
+
+    /** Cards that are private in effect, presenting or not: marked private, or sitting in a private area. */
+    val privateIds: Set<String>
+        get() {
+            val p = project
+            privateCache?.let { (cp, ids) -> if (cp === p) return ids }
+            return p.privateNodeIds().also { privateCache = p to it }
+        }
+
+    /** After something went private while presenting: let go of a selected area or link that's no longer shown. */
+    private fun dropHiddenSelection() {
+        val shownAreas = shownProject.areas
+        if (selectedAreaId != null && shownAreas.none { it.id == selectedAreaId }) selectedAreaId = null
+        if (editingAreaId != null && shownAreas.none { it.id == editingAreaId }) editingAreaId = null
+        if (selectedEdgeId != null && shownProject.edges.none { it.id == selectedEdgeId }) selectedEdgeId = null
+    }
 
     private var visibleMessagesCache: Triple<List<Message>, Set<String>, List<Message>>? = null
 
@@ -452,7 +487,8 @@ class AppState(val session: Session) {
     private fun contentBounds(): Bounds? {
         val xs1 = project.nodes.map { Triple(it.x, it.y, Pair(it.width, it.height)) }
         val xs2 = project.elements.map { Triple(it.x, it.y, Pair(it.width, it.height)) }
-        val all = xs1 + xs2
+        val xs3 = project.areas.map { Triple(it.x, it.y, Pair(it.width, it.height)) }
+        val all = xs1 + xs2 + xs3
         if (all.isEmpty()) return null
         return Bounds(
             left = all.minOf { it.first },
@@ -475,14 +511,25 @@ class AppState(val session: Session) {
 
     fun selectOnly(id: String) {
         selectedNodeIds = setOf(id)
+        selectedAreaId = null
+        selectedEdgeId = null
     }
 
     fun toggleSelected(id: String) {
         selectedNodeIds = if (id in selectedNodeIds) selectedNodeIds - id else selectedNodeIds + id
+        selectedAreaId = null
+        selectedEdgeId = null
     }
 
     fun clearSelection() {
         selectedNodeIds = emptySet()
+        selectedAreaId = null
+        selectedEdgeId = null
+    }
+
+    /** The box-drag on empty canvas ended: select what it covers, or (while drawing an area) make the area. */
+    fun finishMarquee() {
+        if (drawingArea) finishAreaDrawing() else applyMarqueeSelection()
     }
 
     /** Selects every node/element intersecting the current marquee rectangle, then clears the marquee. */
@@ -501,6 +548,8 @@ class AppState(val session: Session) {
             project.elements.forEach { if (hits(it.x, it.y, it.width, it.height)) add(it.id) }
         }
         selectedNodeIds = hit
+        selectedAreaId = null
+        selectedEdgeId = null
         if (hit.isNotEmpty()) status = "${hit.size} item${if (hit.size == 1) "" else "s"} selected"
     }
 
@@ -511,6 +560,10 @@ class AppState(val session: Session) {
         undoStack = emptyList()
         redoStack = emptyList()
         selectedNodeIds = emptySet()
+        selectedAreaId = null
+        editingAreaId = null
+        selectedEdgeId = null
+        drawingArea = false
         connectFromId = null
         editingNodeId = null
         editingElementId = null
@@ -861,19 +914,68 @@ class AppState(val session: Session) {
     }
 
     /**
-     * Lays the whole map out around its goal: each branch keeps the side it's on, the rings
-     * spread until no cards overlap (see [RadialLayout]). One undo step.
+     * Tidy, careful with the places the user gave things: a selected area (or the area of
+     * the one selected card) is laid out inside itself; several selected cards are laid out
+     * around their hub; with nothing selected the whole map is laid out around its goal,
+     * but only while the board has no areas (they'd be scrambled), and only on a second
+     * click (it moves everything the user placed). Each branch keeps its
+     * side, rings spread until no cards overlap (see [RadialLayout]). One undo step.
      */
     fun tidyLayout() {
-        if (project.nodes.size < 2) {
-            status = "Nothing to tidy"
+        val single = selectedNodeIds.singleOrNull()?.let { id -> project.nodes.find { it.id == id } }
+        val area = selectedArea?.takeIf { selectedNodeIds.isEmpty() } ?: single?.let { project.areaOf(it) }
+        when {
+            area != null -> tidyArea(area.id)
+            selectedNodeIds.size >= 2 -> {
+                val ids = project.nodes.filter { it.id in selectedNodeIds }.mapTo(HashSet()) { it.id }
+                if (ids.size < 2) return
+                pushUndo()
+                placeTidied(ids)
+                status = "Tidied the ${ids.size} selected cards around their hub (Ctrl+Z puts them back)"
+            }
+            single != null -> status = "Tidy works inside an area: put this card in one, or select a group of cards"
+            project.areas.isNotEmpty() -> status = "Select an area (click its name) to tidy inside it; the rest of the map stays put"
+            project.nodes.size < 2 -> status = "Nothing to tidy"
+            // Where things sit is part of the thinking: moving every card takes a second click.
+            nowMillis() - tidyAskedAt > TIDY_CONFIRM_MILLIS -> {
+                tidyAskedAt = nowMillis()
+                status = "Tidy moves every card on the map. Click Tidy again to go ahead (Ctrl+Z puts it back)"
+            }
+            else -> {
+                tidyAskedAt = 0L
+                pushUndo()
+                placeTidied(project.nodes.mapTo(HashSet()) { it.id })
+                zoomToFit()
+                status = "Tidied the map around the goal (Ctrl+Z puts it back)"
+            }
+        }
+    }
+
+    private var tidyAskedAt = 0L
+
+    /** Lays out just the cards in [ids] (and the links between them); their hub stays where it is. */
+    private fun placeTidied(ids: Set<String>) {
+        val sub = project.copy(
+            nodes = project.nodes.filter { it.id in ids },
+            edges = project.edges.filter { it.fromNodeId in ids && it.toNodeId in ids },
+            areas = emptyList(),
+        )
+        val positions = RadialLayout.layout(sub)
+        project = project.copy(nodes = project.nodes.map { n -> positions[n.id]?.let { (x, y) -> n.copy(x = x, y = y) } ?: n })
+    }
+
+    /** Tidies the cards inside one area around its hub, then fits the area to them. */
+    fun tidyArea(areaId: String) {
+        val area = project.areas.find { it.id == areaId } ?: return
+        val ids = project.cardsIn(area).mapTo(HashSet()) { it.id }
+        if (ids.size < 2) {
+            status = "Nothing to tidy in ${area.title.ifBlank { "this area" }}"
             return
         }
-        val positions = RadialLayout.layout(project)
         pushUndo()
-        project = project.copy(nodes = project.nodes.map { n -> positions[n.id]?.let { (x, y) -> n.copy(x = x, y = y) } ?: n })
-        zoomToFit()
-        status = "Tidied the map around the goal (Ctrl+Z puts it back)"
+        placeTidied(ids)
+        project = project.copy(areas = project.areas.map { a -> if (a.id == areaId) a.fittedTo(project.nodes.filter { it.id in ids }) else a })
+        status = "Tidied ${area.title.ifBlank { "the area" }}; the rest of the map stayed put (Ctrl+Z puts it back)"
     }
 
     /** Snaps every selected item's top-left corner to the nearest grid point, lining them up with each other. */
@@ -981,7 +1083,15 @@ class AppState(val session: Session) {
 
     fun deleteNode(id: String) = deleteItems(setOf(id))
 
-    fun deleteSelected() = deleteItems(selectedNodeIds)
+    fun deleteSelected() {
+        val area = selectedAreaId
+        val edge = selectedEdgeId
+        when {
+            selectedNodeIds.isNotEmpty() -> deleteItems(selectedNodeIds)
+            area != null -> removeArea(area)
+            edge != null -> deleteEdge(edge)
+        }
+    }
 
     private fun deleteItems(ids: Set<String>) {
         if (ids.isEmpty()) return
@@ -1137,6 +1247,301 @@ class AppState(val session: Session) {
     fun deleteEdge(edgeId: String) {
         pushUndo()
         project = project.copy(edges = project.edges.filterNot { it.id == edgeId })
+        if (selectedEdgeId == edgeId) selectedEdgeId = null
+    }
+
+    // ---- Link selection (click a connection on the map) ----
+
+    /** The connection clicked on the map; its bar sets what the link means. */
+    var selectedEdgeId by mutableStateOf<String?>(null)
+        private set
+
+    fun selectEdge(id: String) {
+        selectedEdgeId = id
+        selectedNodeIds = emptySet()
+        selectedAreaId = null
+    }
+
+    /** The connection drawn under a click at [screen] (within a few pixels of its line), if any. */
+    fun edgeAt(screen: Offset): String? {
+        val p = shownProject
+        val byId = p.nodes.associateBy { it.id }
+        var best: String? = null
+        var bestDistance = 7f * viewDensity
+        for (e in p.edges) {
+            val a = byId[e.fromNodeId] ?: continue
+            val b = byId[e.toNodeId] ?: continue
+            val d = distanceToSegment(screen, worldToScreen(Offset(a.centerX, a.centerY)), worldToScreen(Offset(b.centerX, b.centerY)))
+            if (d < bestDistance) {
+                bestDistance = d
+                best = e.id
+            }
+        }
+        return best
+    }
+
+    private fun distanceToSegment(p: Offset, a: Offset, b: Offset): Float {
+        val ab = b - a
+        val len2 = ab.x * ab.x + ab.y * ab.y
+        val t = if (len2 < 1e-6f) 0f else (((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / len2).coerceIn(0f, 1f)
+        return (p - (a + ab * t)).getDistance()
+    }
+
+    /** What a link means (Relates, Causes, Solves…), one undo step. */
+    fun setLinkType(edgeId: String, typeId: String) {
+        val edge = project.edges.find { it.id == edgeId } ?: return
+        if (edge.type == typeId) return
+        pushUndo()
+        setEdgeType(edgeId, typeId)
+        status = "Link: ${edgeTypeOf(typeId).label}"
+    }
+
+    /** Turns a link round (a Solves arrow drawn from the problem to the fix, say). */
+    fun flipEdge(edgeId: String) {
+        val edge = project.edges.find { it.id == edgeId } ?: return
+        if (project.edges.any { it.fromNodeId == edge.toNodeId && it.toNodeId == edge.fromNodeId }) {
+            status = "There's already a link the other way"
+            return
+        }
+        pushUndo()
+        updateEdge(edgeId) { it.copy(fromNodeId = it.toNodeId, toNodeId = it.fromNodeId) }
+        status = "Link turned round"
+    }
+
+    // ---- Areas (named territories behind groups of cards) ----
+
+    /** The area whose name was clicked (an area is selected on its own, not with cards). */
+    var selectedAreaId by mutableStateOf<String?>(null)
+        private set
+
+    /** Area whose name is being typed on the map. */
+    var editingAreaId by mutableStateOf<String?>(null)
+
+    /** True after "Area" with nothing selected: the next box-drag on the canvas draws the area. */
+    var drawingArea by mutableStateOf(false)
+        private set
+
+    val selectedArea: Area? get() = selectedAreaId?.let { id -> project.areas.find { it.id == id } }
+
+    fun selectArea(id: String) {
+        selectedAreaId = id
+        selectedNodeIds = emptySet()
+        selectedEdgeId = null
+    }
+
+    /**
+     * The "Area" button: around the selected cards; around one selected card and the cards
+     * that hang off it (named after it); with nothing selected, draw one by dragging a box.
+     */
+    fun areaFromSelection() {
+        val selected = project.nodes.filter { it.id in selectedNodeIds && it.id !in hiddenNodeIds }
+        when {
+            selected.size == 1 -> addAreaAroundBranch(selected.single().id)
+            selected.isNotEmpty() -> addArea(selected, title = "")
+            drawingArea -> cancelAreaDrawing()
+            else -> {
+                drawingArea = true
+                clearSelection()
+                status = "Drag a box on the map to draw the area (Esc cancels)"
+            }
+        }
+    }
+
+    /** An area around a card and its direct children on the map, named after the card. */
+    fun addAreaAroundBranch(nodeId: String) {
+        val node = project.nodes.find { it.id == nodeId } ?: return
+        val children = hierarchy.parents.filterValues { it == nodeId }.keys
+        val cards = project.nodes.filter { (it.id == nodeId || it.id in children) && it.id !in hiddenNodeIds }
+        addArea(cards, title = node.title.trim())
+    }
+
+    private fun addArea(cards: List<Node>, title: String) {
+        if (cards.isEmpty()) return
+        pushUndo()
+        val area = Area(
+            id = newId(), title = title, x = 0f, y = 0f, width = 0f, height = 0f,
+            color = nextAreaColor(), createdAt = nowMillis(), createdBy = session.userName,
+        ).fittedTo(cards)
+        placeNewArea(area)
+    }
+
+    private fun placeNewArea(area: Area) {
+        project = project.copy(areas = project.areas + area)
+        selectArea(area.id)
+        editingAreaId = area.id
+        status = "Name the area, then Enter. Cards dragged into it join it; drag its name to move it all"
+    }
+
+    /** The palette color the fewest areas use, so neighbors tell apart. */
+    private fun nextAreaColor(): Long {
+        val used = project.areas.groupingBy { it.tint }.eachCount()
+        return Area.Palette.minBy { used[it] ?: 0 }
+    }
+
+    fun cancelAreaDrawing() {
+        if (!drawingArea) return
+        drawingArea = false
+        marquee = null
+        status = "Ready"
+    }
+
+    private fun finishAreaDrawing() {
+        val (a, b) = marquee ?: return
+        marquee = null
+        drawingArea = false
+        val w1 = screenToWorld(a)
+        val w2 = screenToWorld(b)
+        val left = min(w1.x, w2.x)
+        val top = min(w1.y, w2.y)
+        val width = max(abs(w2.x - w1.x), Area.MIN_WIDTH)
+        val height = max(abs(w2.y - w1.y), Area.MIN_HEIGHT)
+        pushUndo()
+        placeNewArea(
+            Area(
+                id = newId(), x = left, y = top, width = width, height = height,
+                color = nextAreaColor(), createdAt = nowMillis(), createdBy = session.userName,
+            ),
+        )
+    }
+
+    fun startRenamingArea(id: String) {
+        if (project.areas.none { it.id == id }) return
+        selectArea(id)
+        editingAreaId = id
+    }
+
+    /** The name editor closed; [title] is what was typed (null = Escape: keep the old name). */
+    fun finishAreaTitle(id: String, title: String?) {
+        if (editingAreaId != id) return
+        editingAreaId = null
+        val area = project.areas.find { it.id == id } ?: return
+        val name = title?.trim() ?: return
+        if (name != area.title) {
+            pushUndo()
+            updateArea(id) { it.copy(title = name) }
+        }
+        canvasFocusRequests++
+    }
+
+    fun updateArea(id: String, transform: (Area) -> Area) {
+        project = project.copy(areas = project.areas.map { if (it.id == id) transform(it) else it })
+    }
+
+    fun setAreaColor(id: String, color: Long) {
+        val area = project.areas.find { it.id == id } ?: return
+        if (area.tint == color) return
+        pushUndo()
+        updateArea(id) { it.copy(color = color) }
+    }
+
+    fun setAreaPrivate(id: String, private: Boolean) {
+        val area = project.areas.find { it.id == id } ?: return
+        pushUndo()
+        updateArea(id) { it.copy(isPrivate = private) }
+        val name = area.title.ifBlank { "This area" }
+        status = when {
+            !private -> "$name is no longer private"
+            presenting -> "$name and everything in it: hidden while presenting"
+            else -> "$name and everything in it: hidden when presenting, left out of exports"
+        }
+        if (private && presenting) {
+            selectedAreaId = null
+            dropHiddenSelection()
+        }
+    }
+
+    /** Shrinks or grows the area to hug the cards inside it. */
+    fun fitArea(id: String) {
+        val area = project.areas.find { it.id == id } ?: return
+        val cards = project.cardsIn(area)
+        if (cards.isEmpty()) {
+            status = "No cards in ${area.title.ifBlank { "this area" }} yet: drag some in"
+            return
+        }
+        pushUndo()
+        updateArea(id) { it.fittedTo(cards) }
+    }
+
+    /** Takes the area away; its cards stay where they are. */
+    fun removeArea(id: String) {
+        val area = project.areas.find { it.id == id } ?: return
+        pushUndo()
+        project = project.copy(areas = project.areas.filterNot { it.id == id })
+        if (selectedAreaId == id) selectedAreaId = null
+        if (editingAreaId == id) editingAreaId = null
+        status = "Removed the area ${area.title.ifBlank { "" }}".trim() + "; its cards stay put (Ctrl+Z brings it back)"
+    }
+
+    private class AreaDrag(val areaIds: Set<String>, val nodeIds: Set<String>, val elementIds: Set<String>)
+    private var areaDrag: AreaDrag? = null
+
+    /** Dragging an area's name: it moves with its cards, notes, pictures and any area inside it. One undo step. */
+    fun beginAreaDrag(id: String) {
+        val area = project.areas.find { it.id == id } ?: return
+        pushUndo()
+        selectArea(id)
+        areaDrag = AreaDrag(
+            areaIds = setOf(id) + project.areasInside(area).map { it.id },
+            nodeIds = project.cardsIn(area).mapTo(HashSet()) { it.id },
+            elementIds = project.elements.filter { area.contains(it.x + it.width / 2f, it.y + it.height / 2f) }.mapTo(HashSet()) { it.id },
+        )
+    }
+
+    /** [delta] in world units. */
+    fun dragArea(delta: Offset) {
+        val d = areaDrag ?: return
+        project = project.copy(
+            areas = project.areas.map { if (it.id in d.areaIds) it.copy(x = it.x + delta.x, y = it.y + delta.y) else it },
+            nodes = project.nodes.map { if (it.id in d.nodeIds) it.copy(x = it.x + delta.x, y = it.y + delta.y) else it },
+            elements = project.elements.map { if (it.id in d.elementIds) it.copy(x = it.x + delta.x, y = it.y + delta.y) else it },
+        )
+    }
+
+    fun endAreaDrag() {
+        areaDrag = null
+    }
+
+    /** Moves an area's bottom-right corner by [delta] (world units); the cards stay put. Undo is pushed by the caller at drag start. */
+    fun resizeArea(id: String, delta: Offset) {
+        updateArea(id) {
+            it.copy(width = max(Area.MIN_WIDTH, it.width + delta.x), height = max(Area.MIN_HEIGHT, it.height + delta.y))
+        }
+    }
+
+    // ---- Color by (what the card colors mean; per device) ----
+
+    var colorBy by mutableStateOf(ClientPrefs.colorBy)
+        private set
+
+    fun changeColorBy(by: ColorBy) {
+        colorBy = by
+        ClientPrefs.colorBy = by
+        status = if (by == ColorBy.Type) "Cards colored by type again" else "Cards colored by ${by.label.lowercase()}: ${by.hint}"
+    }
+
+    private var lensCache: Lens? = null
+
+    /** Colors for the cards under [colorBy], rebuilt when the board changes. */
+    val lens: Lens
+        get() {
+            val p = project
+            lensCache?.let { if (it.project === p && it.by == colorBy) return it }
+            return Lens(p, colorBy).also { lensCache = it }
+        }
+
+    // ---- Rate by placing ----
+
+    /** The importance × effort board where cards are rated by dragging them into place. */
+    var rateBoardOpen by mutableStateOf(false)
+
+    /** Both ratings at once (one undo step): what dropping a card on the rating board does. */
+    fun rateNode(id: String, importance: Int, effort: Int) {
+        val node = project.nodes.find { it.id == id } ?: return
+        val i = clampImportance(importance)
+        val e = clampImportance(effort)
+        if (node.importance == i && node.effort == e) return
+        pushUndo()
+        updateNode(id) { it.copy(importance = i, effort = e) }
     }
 
     // ---- Chat ----
@@ -1553,6 +1958,9 @@ class AppState(val session: Session) {
         const val MAX_ZOOM = 3f
         const val UNDO_LIMIT = 50
         const val RECENT_TYPE_LIMIT = 6
+
+        /** How long the whole-map Tidy waits for its second click. */
+        private const val TIDY_CONFIRM_MILLIS = 6_000L
 
         /** World-unit pitch of the canvas dot grid; Align snaps item corners to multiples of this. */
         const val GRID_SPACING = 26f

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nodenote.model.Attachment
+import com.nodenote.model.ColorBy
 import com.nodenote.model.NodeCategory
 import com.nodenote.model.NodeTypeDef
 import com.nodenote.state.AppState
@@ -95,6 +96,13 @@ fun TopBar(workspace: Workspace) {
                 enabled = state.selectedNodeIds.isNotEmpty(),
             )
             ToolbarButton("Tidy", onClick = { state.tidyLayout() }, enabled = loaded && state.project.nodes.size > 1)
+            // Around the selected cards; with nothing selected, drag a box on the map.
+            ToolbarButton(
+                if (state.drawingArea) "Drawing area" else "Area",
+                onClick = { state.areaFromSelection() },
+                enabled = loaded,
+                color = if (state.drawingArea) Accent else TextPrimary,
+            )
             ToolbarButton(
                 "Delete",
                 onClick = { state.deleteSelected() },
@@ -116,6 +124,8 @@ fun TopBar(workspace: Workspace) {
                 enabled = loaded,
                 color = if (state.presenting) PrivateAmber else TextSecondary,
             )
+            ColorByButton(state, enabled = loaded)
+            ToolbarButton("Rate", onClick = { state.rateBoardOpen = true }, enabled = loaded, color = TextSecondary)
             Spacer(Modifier.width(16.dp))
         }
 
@@ -147,6 +157,37 @@ private fun ToolbarDivider() {
     Spacer(Modifier.width(10.dp))
     VerticalDivider(Modifier.height(20.dp), color = PanelBorder)
     Spacer(Modifier.width(10.dp))
+}
+
+/** "Color: Type ▾" — what the card colors mean on this map: type, status, importance, effort, person, or issues with no fix. */
+@Composable
+private fun ColorByButton(state: AppState, enabled: Boolean) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ToolbarButton(
+            "Color: ${state.colorBy.label}",
+            onClick = { open = true },
+            enabled = enabled,
+            dropdown = true,
+            color = if (state.colorBy != ColorBy.Type) Accent else TextSecondary,
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            ColorBy.entries.forEach { by ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(by.label, fontSize = 12.sp, color = if (by == state.colorBy) Accent else TextPrimary)
+                            Text(by.hint, fontSize = 10.sp, color = TextFaint)
+                        }
+                    },
+                    onClick = {
+                        state.changeColorBy(by)
+                        open = false
+                    },
+                )
+            }
+        }
+    }
 }
 
 /** Export ▾ — the board as .json (backup / hand-off) or the map as a picture. */

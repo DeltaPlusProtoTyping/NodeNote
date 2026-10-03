@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.model.MessageKind
 import com.nodenote.model.NodeLinkRegex
 import com.nodenote.model.NodeStatus
+import com.nodenote.model.personColor
 import com.nodenote.model.Project
 import com.nodenote.model.mentionsIn
 import com.nodenote.theme.Accent
@@ -187,17 +188,8 @@ fun KindPill(kind: MessageKind, modifier: Modifier = Modifier, filled: Boolean =
 fun StatusPill(status: NodeStatus, modifier: Modifier = Modifier, filled: Boolean = false, onClick: (() -> Unit)? = null) =
     Pill(status.label, status.color, modifier, filled, onClick)
 
-private val authorPalette = listOf(
-    Color(0xFF5B9CFF), Color(0xFF53C27C), Color(0xFFE58E5B), Color(0xFFD97BC8),
-    Color(0xFF45C4D6), Color(0xFFF0C04A), Color(0xFF9B7BFF), Color(0xFFE2606B),
-)
-
-/** Stable per-name color so Ben and Nick are recognizable at a glance. */
-fun authorColor(name: String): Color {
-    var h = 7
-    for (c in name.lowercase()) h = h * 31 + c.code
-    return authorPalette[(h and 0x7fffffff) % authorPalette.size]
-}
+/** Stable per-name color so Ben and Nick are recognizable at a glance (the same one "Color by: Person" uses). */
+fun authorColor(name: String): Color = Color(personColor(name))
 
 // ---- Time ----
 

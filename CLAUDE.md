@@ -70,7 +70,14 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 - Exports: `core/.../export/MapScene.kt` builds one vector `Scene` (Helvetica metrics) that
   `SvgWriter`/`PdfWriter` write out and `MapExporter` rasterizes for PNG and the dialog preview.
   Private nodes are left out unless "Include private nodes" is ticked.
-- Tidy = `core/.../layout/RadialLayout.kt`. Spell check = `core/.../spell/SpellChecker.kt` over
+- Areas = `core/.../model/Area.kt` (`Project.areas`, synced as `upsertAreas`/`deleteAreas`; PatchMerge
+  covers them). Membership is geometric (card centre inside), never stored. Effective privacy is
+  `Project.privateNodeIds()` (private cards + cards in a private area): use it (or
+  `AppState.privateIds`), not `Node.isPrivate`, wherever something is hidden or left out.
+- Color by = `core/.../model/Lens.kt` (`ColorBy`, `Lens`): one place for card tints and legends, used by
+  NodeCard, the canvas legend and MapScene. Person colors = `personColor` (chat author colors too).
+- Tidy = `core/.../layout/RadialLayout.kt`; `AppState.tidyLayout` only lays out a selected area or
+  selection once a board has areas (whole-map layout would scramble them). Spell check = `core/.../spell/SpellChecker.kt` over
   `server/src/main/resources/dict/en_US.txt` (built by `tools/build_dictionary.py` from
   LibreOffice's SCOWL en_US Hunspell files), served at `/api/dictionary`; bump
   `DICTIONARY_VERSION` in `ApiClient.kt` when it changes.

@@ -63,6 +63,7 @@ fun MainScreen(workspace: Workspace, modifier: Modifier = Modifier) {
             if (maxWidth < 760.dp || maxHeight < 520.dp) CompactLayout(workspace) else MainContent(workspace, maxWidth.value)
             // Dialogs operate on the focused tab.
             ExportDialog(focused)
+            RateBoardDialog(focused)
             ShortcutsDialog(focused)
             NewTypeDialog(focused)
             NewBoardDialog(workspace)

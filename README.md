@@ -20,13 +20,16 @@ server you host on your own PC and reach over **Tailscale**.
 |---|---|
 | **Board** | One map of related topics — *Shop floor*, *Estimating*, *Q4 improvements*. Listed on the left. |
 | **Node** | A topic on the board: Issue, Improvement, Idea, Decision, Action, Project, Machine, Process, Tooling, Customer, Quote… Has a **status** (Open → In progress → Blocked → Solved / Parked), **importance** and **effort** 1–10, **owner**, and a **summary** of where it stands. The card shows the whole title and grows to fit it; drag its bottom-right corner (or pick a size) to make a node bigger. |
-| **Mapping** | Select a node: **Tab** adds a child (placed on the side away from the goal, ready to type), **Enter** a sibling. While typing a new node's title, Enter starts the next sibling and Tab a child of it, so a branch can be typed out without the mouse. The bar above the selected card sets type, status, rating, Private and size. **Tidy** lays the whole map out around the goal, keeping each branch on its side (undo puts it back). |
+| **Mapping** | Select a node: **Tab** adds a child (placed on the side away from the goal, ready to type), **Enter** a sibling. While typing a new node's title, Enter starts the next sibling and Tab a child of it, so a branch can be typed out without the mouse. The bar above the selected card sets type, status, rating, Private and size. **Tidy** lays out just the selected area (or the selected cards) around their hub and leaves the rest of the map where you put it; on a board without areas, a second click lays out the whole map around the goal (undo puts it back). |
+| **Areas** | Named territories behind groups of cards (*Lead time*, *Sales pipeline*): select cards and press **Area** (`Ctrl+G`), use *+ Area* on a card's bar (the card and its children, named after it), or press Area with nothing selected and drag a box. A card belongs to the area it sits in, so dragging it in or out is all it takes; dragging an area's **name** moves the area with everything in it. Click the name for its bar: rename, color, Private (hides the whole area and its cards when presenting), fit to cards, tidy inside, remove (the cards stay). Zoomed far out, cards step back and the area names show big. |
+| **Links** | Click a link on the map to say what it means: *Relates*, *Causes*, *Solves*, *Blocks*, *Part of* (or flip or delete it). Typed links get an arrow and their color. |
+| **Color by** | The toolbar's *Color:* switch recolors every card by **status**, **importance**, **effort**, **person** (owner, else the first @name) or **No fix yet** (Issues with no *Solves* link: red; a fix on the map: amber; solved: green). A legend explains the colors; exports use the same colors. |
 | **Chat** | Select a node → its thread opens on the right. Messages have a **kind** (Note, Issue, Idea, Decision, Action, Fix) and an optional **importance 1–10**. Actions get a done checkbox. |
 | **Links across nodes** | Type `[[` in a message to link another node. The message then also shows in that node's chat ("mentioned in"), and the link is clickable. |
 | **Dump & sort** | With nothing selected, the chat box is a dump bar: type a thought and press Enter, and it goes to **Unsorted**. As you type it suggests where the thought belongs; tap one to file it there directly. The **Sort** tab works through the Unsorted pile: each thought gets its best-matching nodes (with their parent branch) as one-tap chips, plus *Other node…* and *New node under…*, which hangs a new node off the right branch. Nothing is filed automatically. Matching is keyword relevance over titles, the node **Keywords** field, descriptions and everything already filed under each node, so it improves as you sort. |
 | **Board feed** | Nothing selected = every message on the board, tagged with its node; filter by importance (5+/7+/9+), kind, or text. |
-| **Priorities** | *Quick wins*: open work on a PICK chart (importance 6+ and effort 4 or less = quick win; big bets, fill-ins, rethink), plus what still needs rating. *Wins*: every Solved node with the date it was solved — copy the list for an email. *Key details*: messages rated at/above a threshold. |
-| **Private & presenting** | Mark a node **Private** (the lock). **Present** hides private nodes, their links and their chat everywhere on that screen until you stop; exports leave them out unless you tick *Include private nodes*. |
+| **Priorities** | *Quick wins*: open work on a PICK chart (importance 6+ and effort 4 or less = quick win; big bets, fill-ins, rethink), plus what still needs rating. **Rate by placing** (toolbar *Rate*) shows every open card on an importance × effort board: drag a card up for more important, right for a bigger job, and both ratings are set in one go. *Wins*: every Solved node with the date it was solved — copy the list for an email. *Key details*: messages rated at/above a threshold. |
+| **Private & presenting** | Mark a node or a whole area **Private** (the lock). **Present** hides private nodes (and everything in a private area), their links and their chat everywhere on that screen until you stop; exports leave them out unless you tick *Include private nodes and areas*. |
 | **People** | Type `@Kurt` in a title or message. Everyone named gets a chip above the node list; clicking it shows every node and message that mentions them (with or without the @). |
 | **Spelling** | Titles and messages get red squiggles under typos; the bar above a selected node offers the fix, and the node list's *Typos* filter fixes them in one click each. |
 | **Unread** | Nodes, the Chat tab, and the node list show what the other person posted since you last looked. |
@@ -117,8 +120,8 @@ change things in the app. Every note carries `nodenote: generated` in its frontm
 ```
 
 A board keeps its folder when it's renamed, so links you make to its notes keep working. Node
-frontmatter also carries `effort`, `solved` (date) and `private: true`; the board note lists
-quick wins and wins.
+frontmatter also carries `effort`, `solved` (date), `area` and `private: true` (also for cards in a
+private area); the board note shows the map, lists the areas with their cards, quick wins and wins.
 
 Frontmatter makes the notes queryable with Obsidian Bases/Dataview (e.g. every open Issue with
 importance ≥ 7 across boards).
@@ -141,7 +144,8 @@ importance ≥ 7 across boards).
 
 *Export → Map as PDF, SVG or PNG.* PDF and SVG are vectors: text and lines stay sharp at any zoom
 and any size. PDF opens on every computer and phone; SVG opens in any browser and imports into
-PowerPoint, Word and Visio. PNG is for pasting into a chat. Private nodes are left out unless you
+PowerPoint, Word and Visio. PNG is for pasting into a chat. Areas are drawn behind their cards, and
+the cards take the map's *Color by* colors. Private nodes and areas are left out unless you
 include them.
 
 ## Keyboard
@@ -149,12 +153,13 @@ include them.
 | Action | Shortcut |
 |---|---|
 | New child / new sibling of the selected node | `Tab` / `Enter` |
-| Rename the selected node | `F2` (or double-click) |
+| Rename the selected node / area | `F2` (or double-click) |
+| Area around the selected cards (none selected: drag a box) | `Ctrl+G` |
 | Send message / new line | `Enter` / `Shift+Enter` |
 | Link a node in a message | `[[` then pick |
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
 | Copy / Cut / Paste / Duplicate | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` / `Ctrl+D` |
-| Delete selection | `Delete` |
+| Delete selection (cards, else the selected area or link) | `Delete` |
 | Pan / zoom | middle- or right-drag / mouse wheel |
 | Add node | double-click empty canvas |
 | Cheat sheet | `F1` |

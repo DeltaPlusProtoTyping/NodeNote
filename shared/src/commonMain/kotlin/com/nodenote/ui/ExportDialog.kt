@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nodenote.model.ColorBy
 import com.nodenote.model.ExportFormat
 import com.nodenote.model.ExportRegion
 import com.nodenote.model.ExportSettings
@@ -134,7 +135,8 @@ fun ExportDialog(state: AppState) {
                                 "${(preview.bitmap.height * settings.scale).roundToInt()} px"
                         settings.format == ExportFormat.Pdf -> "Vector PDF: sharp at any zoom, opens on any computer or phone"
                         else -> "Vector SVG: sharp at any zoom, opens in any web browser"
-                    } + if (!settings.includePrivate && state.project.nodes.any { it.isPrivate }) " · private nodes left out" else ""
+                    } + (if (!settings.includePrivate && (state.privateIds.isNotEmpty() || state.project.areas.any { it.isPrivate })) " · private nodes left out" else "") +
+                        if (state.colorBy != ColorBy.Type) " · colored by ${state.colorBy.label.lowercase()}, as on the map" else ""
                     Text(sizeText, fontSize = 11.sp, color = TextFaint)
                     Spacer(Modifier.weight(1f))
                     ToolbarButton("Cancel", onClick = { state.closeExportDialog() }, color = TextSecondary)
@@ -337,7 +339,7 @@ private fun OptionsPane(state: AppState, modifier: Modifier = Modifier) {
             fontSize = 10.sp,
             color = TextFaint,
         )
-        ToggleRow("Include private nodes", s.includePrivate) { update { st -> st.copy(includePrivate = it) } }
+        ToggleRow("Include private nodes and areas", s.includePrivate) { update { st -> st.copy(includePrivate = it) } }
         HorizontalDivider(color = PanelBorder)
 
         PanelCaption("Region")

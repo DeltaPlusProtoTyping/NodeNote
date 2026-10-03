@@ -25,13 +25,16 @@ data class BoardPatch(
     val deleteElements: List<String> = emptyList(),
     val upsertNodeTypes: List<NodeTypeDef> = emptyList(),
     val upsertEdgeTypes: List<EdgeTypeDef> = emptyList(),
+    val upsertAreas: List<Area> = emptyList(),
+    val deleteAreas: List<String> = emptyList(),
 ) {
     val isEmpty: Boolean
         get() = name == null &&
             upsertNodes.isEmpty() && deleteNodes.isEmpty() &&
             upsertEdges.isEmpty() && deleteEdges.isEmpty() &&
             upsertElements.isEmpty() && deleteElements.isEmpty() &&
-            upsertNodeTypes.isEmpty() && upsertEdgeTypes.isEmpty()
+            upsertNodeTypes.isEmpty() && upsertEdgeTypes.isEmpty() &&
+            upsertAreas.isEmpty() && deleteAreas.isEmpty()
 }
 
 object BoardDiff {
@@ -47,6 +50,8 @@ object BoardDiff {
         deleteElements = removed(from.elements, to.elements) { it.id },
         upsertNodeTypes = changed(from.customNodeTypes, to.customNodeTypes) { it.id },
         upsertEdgeTypes = changed(from.customEdgeTypes, to.customEdgeTypes) { it.id },
+        upsertAreas = changed(from.areas, to.areas) { it.id },
+        deleteAreas = removed(from.areas, to.areas) { it.id },
     )
 
     /** Items in [to] that are new or differ from their [from] counterpart, in [to]'s order. */
@@ -80,6 +85,7 @@ fun Project.applyPatch(patch: BoardPatch): Project {
         elements = merge(elements, patch.upsertElements, patch.deleteElements) { it.id },
         customNodeTypes = merge(customNodeTypes, patch.upsertNodeTypes, emptyList()) { it.id },
         customEdgeTypes = merge(customEdgeTypes, patch.upsertEdgeTypes, emptyList()) { it.id },
+        areas = merge(areas, patch.upsertAreas, patch.deleteAreas) { it.id },
     )
 }
 

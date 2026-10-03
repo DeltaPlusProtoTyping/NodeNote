@@ -1,13 +1,20 @@
 package com.nodenote.export
 
+import com.nodenote.model.Area
 import com.nodenote.model.BuiltinTypes
 import com.nodenote.model.CanvasElement
+import com.nodenote.model.ColorBy
 import com.nodenote.model.ElementKind
+import com.nodenote.model.Lens
 import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.Project
 import com.nodenote.model.edgeType
+import com.nodenote.model.effortArgb
+import com.nodenote.model.importanceArgb
 import com.nodenote.model.nodeType
+import com.nodenote.model.privateAreaIds
+import com.nodenote.model.privateNodeIds
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.abs
@@ -56,7 +63,7 @@ data class MapSceneOptions(
     /** The part of the board to show; null = all of it plus [padding]. */
     val region: MapRect? = null,
     val padding: Float = 48f,
-    /** Private nodes (and their connections) are left out unless this is set. */
+    /** Private nodes and private areas (with everything in them) are left out unless this is set. */
     val includePrivate: Boolean = false,
     /** Only these nodes (and the connections between them); null = all. */
     val onlyNodeIds: Set<String>? = null,
@@ -74,6 +81,8 @@ data class MapSceneOptions(
     val titleBlockY: Float = 1f,
     /** Second line of the title block, e.g. "37 nodes · exported Oct 2, 2026". */
     val subtitle: String = "",
+    /** What the card colors mean (the app's "Color by"); the legend follows it. */
+    val colorBy: ColorBy = ColorBy.Type,
 )
 
 /** A built map: the scene plus where the overlays landed (scene units), for dragging them on a preview. */
@@ -81,10 +90,11 @@ class MapScene(val scene: Scene, val legendRect: MapRect?, val titleRect: MapRec
 
 /**
  * Turns a board into a vector [Scene] — the one drawing behind the PDF, SVG and PNG
- * exports, so all three look the same. Cards mirror the app's (type, status, private,
- * importance and effort in the header; the WHOLE title, wrapped — a card grows to fit
- * it even if it's cut short on screen), drawn at each node's own scale. Text is set in
- * Helvetica/Arial, measured with [Helvetica] so wrapping matches every viewer.
+ * exports, so all three look the same. Areas lie underneath as tinted territories with
+ * their names; cards mirror the app's (type, status, private, importance and effort in
+ * the header; the WHOLE title, wrapped — a card grows to fit it even if it's cut short
+ * on screen), drawn at each node's own scale and tinted by the chosen [ColorBy]. Text is
+ * set in Helvetica/Arial, measured with [Helvetica] so wrapping matches every viewer.
  */
 object MapSceneBuilder {
 
@@ -93,12 +103,19 @@ object MapSceneBuilder {
 
     fun build(project: Project, options: MapSceneOptions, pixelsOf: (CanvasElement) -> Pixels? = { null }): MapScene? {
         val style = options.style
+        val hiddenNodes = if (options.includePrivate) emptySet() else project.privateNodeIds()
+        val hiddenAreas = if (options.includePrivate) emptySet() else project.privateAreaIds()
         val keep = project.nodes.filter { n ->
-            (options.includePrivate || !n.isPrivate) && (options.onlyNodeIds == null || n.id in options.onlyNodeIds)
+            n.id !in hiddenNodes && (options.onlyNodeIds == null || n.id in options.onlyNodeIds)
         }
         val keepIds = keep.mapTo(HashSet()) { it.id }
         val edges = project.edges.filter { it.fromNodeId in keepIds && it.toNodeId in keepIds }
         val elements = if (options.onlyNodeIds == null) project.elements else project.elements.filter { it.id in options.onlyNodeIds }
+        // Biggest first, so an area drawn inside another lands on top of it.
+        val areas = project.areas
+            .filter { a -> a.id !in hiddenAreas && (options.onlyNodeIds == null || keep.any { a.contains(it.centerX, it.centerY) }) }
+            .sortedByDescending { it.width * it.height }
+        val lens = Lens(project, options.colorBy)
 
         // Every card at the height its full title needs (never shorter than on the board).
         val cards = keep.map { CardLayout(it, project, options.showDescriptions) }
@@ -106,7 +123,8 @@ object MapSceneBuilder {
 
         val region = options.region ?: run {
             val rects = cards.map { MapRect(it.node.x, it.node.y, it.width, it.height) } +
-                elements.map { MapRect(it.x, it.y, it.width, it.height) }
+                elements.map { MapRect(it.x, it.y, it.width, it.height) } +
+                areas.map { MapRect(it.x, it.y, it.width, it.height) }
             if (rects.isEmpty()) return null
             val left = rects.minOf { it.x } - options.padding
             val top = rects.minOf { it.y } - options.padding
@@ -118,7 +136,8 @@ object MapSceneBuilder {
 
         val items = ArrayList<SceneItem>()
 
-        // Edges first, under the cards.
+        // Territories at the bottom, then edges, then the cards.
+        for (area in areas) items += areaItems(area, ox, oy)
         for (edge in edges) {
             val a = cardById[edge.fromNodeId] ?: continue
             val b = cardById[edge.toNodeId] ?: continue
@@ -145,7 +164,7 @@ object MapSceneBuilder {
         }
 
         for (el in elements) items += elementItems(el, ox, oy, style, pixelsOf)
-        for (card in cards) items += card.items(ox, oy, style)
+        for (card in cards) items += card.items(ox, oy, style, lens.colorOf(card.node))
 
         // Overlays sit in scene space, sized by overlayScale (so they look the same in a whole-board or current-view export).
         val u = options.overlayScale
@@ -153,7 +172,7 @@ object MapSceneBuilder {
         var legendRect: MapRect? = null
         var titleRect: MapRect? = null
         if (options.showLegend) {
-            legendItems(project, keep, edges, options, region.width, region.height, margin)?.let { (rect, legendItems) ->
+            legendItems(project, keep, edges, lens, options, region.width, region.height, margin)?.let { (rect, legendItems) ->
                 legendRect = rect
                 items += legendItems
             }
@@ -201,14 +220,23 @@ object MapSceneBuilder {
         val centerX = node.x + width / 2f
         val centerY = node.y + height / 2f
 
-        fun items(ox: Float, oy: Float, style: MapStyle): List<SceneItem> {
+        /** [tint] is the card's "Color by" color (null = the plain card). */
+        fun items(ox: Float, oy: Float, style: MapStyle, tint: Long?): List<SceneItem> {
             val x0 = node.x + ox
             val y0 = node.y + oy
             fun x(v: Float) = x0 + v * s
             fun y(v: Float) = y0 + v * s
             val out = ArrayList<SceneItem>()
-            out += SceneRect(x0, y0, width, height, radius = 10f * s, fill = style.card,
-                stroke = if (node.isPrivate) PRIVATE else style.cardBorder, strokeWidth = s)
+            out += SceneRect(
+                x0, y0, width, height, radius = 10f * s,
+                fill = if (tint != null) mix(style.card, tint, 0.2f) else style.card,
+                stroke = when {
+                    node.isPrivate -> PRIVATE
+                    tint != null -> mix(style.card, tint, 0.85f)
+                    else -> style.cardBorder
+                },
+                strokeWidth = if (tint != null && !node.isPrivate) 1.5f * s else s,
+            )
 
             // Header, right side first: ratings, status, private marker; the type label gets what's left.
             val headerMid = PAD_TOP + HEADER / 2f
@@ -265,6 +293,40 @@ object MapSceneBuilder {
         }
     }
 
+    // ---- areas ----
+
+    private const val AREA_PAD = 16f
+    private const val AREA_PAD_TOP = 13f
+
+    /** A territory: tinted, outlined, its name in the corner, in a size that reads from far away. */
+    private fun areaItems(area: Area, ox: Float, oy: Float): List<SceneItem> {
+        val x = area.x + ox
+        val y = area.y + oy
+        val tint = area.tint
+        val out = ArrayList<SceneItem>()
+        out += SceneRect(
+            x, y, area.width, area.height, radius = 18f,
+            fill = withAlpha(tint, 0.10f),
+            stroke = if (area.isPrivate) withAlpha(PRIVATE, 0.85f) else withAlpha(tint, 0.6f),
+            strokeWidth = 1.4f,
+        )
+        val title = area.title.trim()
+        if (title.isNotEmpty()) {
+            val size = areaTitleSize(area)
+            val line = Helvetica.wrap(title, area.width - 2 * AREA_PAD, size, bold = true, maxLines = 1).first()
+            val baselineY = y + AREA_PAD_TOP + size * Helvetica.ASCENT
+            out += SceneText(x + AREA_PAD, baselineY, line, size, tint, bold = true)
+            if (area.isPrivate) {
+                val tagX = x + AREA_PAD + Helvetica.width(line, size, bold = true) + 10f
+                out += SceneText(tagX, baselineY, "PRIVATE", 9f, PRIVATE, bold = true, letterSpacing = 0.6f)
+            }
+        }
+        return out
+    }
+
+    /** An area's name grows with the area (so a big territory reads from across the room), 18 to 36 units. */
+    fun areaTitleSize(area: Area): Float = (area.width / 14f).coerceIn(18f, 36f)
+
     /** Baseline that centers a line of [size] on [middle]. */
     private fun baseline(middle: Float, size: Float) = middle + (Helvetica.ASCENT - Helvetica.DESCENT) / 2f * size
 
@@ -302,17 +364,25 @@ object MapSceneBuilder {
         return margin + freeW * fx.coerceIn(0f, 1f) to margin + freeH * fy.coerceIn(0f, 1f)
     }
 
-    /** Node types on the map (what the card colors mean), then any typed connections. */
+    /**
+     * What the card colors mean (node types, or the [ColorBy] scale when the cards are
+     * colored by something else), then any typed connections.
+     */
     private fun legendItems(
         project: Project,
         nodes: List<Node>,
         edges: List<com.nodenote.model.Edge>,
+        lens: Lens,
         options: MapSceneOptions,
         sceneW: Float,
         sceneH: Float,
         margin: Float,
     ): Pair<MapRect, List<SceneItem>>? {
-        val types = nodes.map { it.type }.distinct().map { project.nodeType(it) }.sortedBy { it.label.lowercase() }
+        val types = if (lens.by == ColorBy.Type) {
+            nodes.map { it.type }.distinct().map { project.nodeType(it) }.sortedBy { it.label.lowercase() }.map { it.label to it.colorArgb }
+        } else {
+            lens.legend(nodes).map { it.label to it.colorArgb }
+        }
         val links = edges.map { it.type }.filter { it != BuiltinTypes.DEFAULT_EDGE }.distinct().map { project.edgeType(it) }
         if (types.isEmpty()) return null
         val u = options.overlayScale * options.legendScale
@@ -321,8 +391,9 @@ object MapSceneBuilder {
         val row = 19f * u
         val heading = 10f * u
         val text = 12f * u
-        val title = options.legendTitle.trim().ifBlank { "Legend" }.uppercase()
-        val rows = types.map { it.label to it.colorArgb } + links.map { it.label to it.colorArgb }
+        val name = options.legendTitle.trim().ifBlank { "Legend" }
+        val title = (if (lens.by == ColorBy.Type) name else "$name · ${lens.by.label}").uppercase()
+        val rows = types + links.map { it.label to it.colorArgb }
         val sectionGap = if (links.isNotEmpty()) 8f * u else 0f
         val contentW = max(
             Helvetica.width(title, heading, bold = true, letterSpacing = 1.2f * u),
@@ -335,9 +406,19 @@ object MapSceneBuilder {
         out += SceneRect(x, y, w, h, radius = 8f * u, fill = style.panel, stroke = style.cardBorder, strokeWidth = u)
         out += SceneText(x + pad, y + pad + heading * Helvetica.ASCENT, title, heading, style.faint, bold = true, letterSpacing = 1.2f * u)
         var rowTop = y + pad + heading + 8f * u
-        types.forEach { t ->
-            out += SceneCircle(x + pad + 5f * u, rowTop + row / 2f, 4.5f * u, fill = t.colorArgb)
-            out += SceneText(x + pad + 18f * u, baseline(rowTop + row / 2f, text), t.label, text, style.title)
+        types.forEach { (label, color) ->
+            if (lens.by == ColorBy.Type) {
+                out += SceneCircle(x + pad + 5f * u, rowTop + row / 2f, 4.5f * u, fill = color)
+            } else {
+                // A card-like swatch: tinted the way the cards are (outlined only when untinted).
+                val sw = 11f * u
+                out += SceneRect(
+                    x + pad, rowTop + (row - sw) / 2f, sw, sw, radius = 3f * u,
+                    fill = if (color != 0L) mix(style.card, color, 0.2f) else style.card,
+                    stroke = if (color != 0L) mix(style.card, color, 0.85f) else style.cardBorder, strokeWidth = 1.2f * u,
+                )
+            }
+            out += SceneText(x + pad + 18f * u, baseline(rowTop + row / 2f, text), label, text, style.title)
             rowTop += row
         }
         if (links.isNotEmpty()) rowTop += sectionGap
@@ -399,20 +480,17 @@ object MapSceneBuilder {
     private const val PRIVATE = 0xFFE5B25B
 
     /** Same scales as the app (ChatWidgets): importance 1–2 slate … 9–10 red; effort green → amber → violet. */
-    fun importanceColor(importance: Int): Long = when (importance) {
-        1, 2 -> 0xFF8FA0B3
-        3, 4 -> 0xFF5B9CFF
-        5, 6 -> 0xFFE5B25B
-        7, 8 -> 0xFFE58E5B
-        else -> 0xFFE2606B
-    }
+    fun importanceColor(importance: Int): Long = importanceArgb(importance)
 
-    fun effortColor(effort: Int): Long = when (effort) {
-        1, 2, 3 -> 0xFF53C27C
-        4, 5, 6 -> 0xFFE5B25B
-        else -> 0xFF9B7BFF
-    }
+    fun effortColor(effort: Int): Long = effortArgb(effort)
 
     private fun withAlpha(argb: Long, alpha: Float): Long =
         ((alpha.coerceIn(0f, 1f) * 255f).toLong() shl 24) or (argb and 0xFFFFFF)
+
+    /** Opaque blend: [t] of the way from [base] to [top]. */
+    private fun mix(base: Long, top: Long, t: Float): Long {
+        fun ch(c: Long, shift: Int) = ((c shr shift) and 0xFF).toFloat()
+        fun blend(shift: Int) = (ch(base, shift) + (ch(top, shift) - ch(base, shift)) * t).toLong().coerceIn(0, 255) shl shift
+        return 0xFF000000 or blend(16) or blend(8) or blend(0)
+    }
 }

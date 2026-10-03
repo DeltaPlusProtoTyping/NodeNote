@@ -50,6 +50,14 @@ fun handleShortcut(workspace: Workspace, event: KeyEvent): Boolean {
             state.closeExportDialog()
             true
         }
+        event.key == Key.Escape && state.rateBoardOpen -> {
+            state.rateBoardOpen = false
+            true
+        }
+        event.key == Key.Escape && state.drawingArea -> {
+            state.cancelAreaDrawing()
+            true
+        }
         event.key == Key.F1 && !typing -> {
             state.shortcutsOpen = !state.shortcutsOpen
             true
@@ -71,8 +79,14 @@ fun handleShortcut(workspace: Workspace, event: KeyEvent): Boolean {
             state.duplicateSelected()
             true
         }
-        (event.key == Key.Delete || event.key == Key.Backspace && ctrl) && !typing && !inDialog && state.selectedNodeIds.isNotEmpty() -> {
+        (event.key == Key.Delete || event.key == Key.Backspace && ctrl) && !typing && !inDialog &&
+            (state.selectedNodeIds.isNotEmpty() || state.selectedAreaId != null || state.selectedEdgeId != null) -> {
             state.deleteSelected()
+            true
+        }
+        // Ctrl+G: an area around the selected cards (nothing selected: drag a box for it).
+        ctrl && event.key == Key.G && !typing && !inDialog -> {
+            state.areaFromSelection()
             true
         }
         ctrl && event.key == Key.C && !typing && !inDialog && state.selectedNodeIds.isNotEmpty() -> {
@@ -116,11 +130,16 @@ fun handleShortcut(workspace: Workspace, event: KeyEvent): Boolean {
             state.startRenaming(state.selectedNode!!.id)
             true
         }
+        event.key == Key.F2 && !typing && !inDialog && state.selectedAreaId != null -> {
+            state.startRenamingArea(state.selectedAreaId!!)
+            true
+        }
         event.key == Key.Escape && !inDialog && !typing && state.connectFromId != null -> {
             state.cancelConnection()
             true
         }
-        event.key == Key.Escape && !inDialog && !typing && state.selectedNodeIds.isNotEmpty() -> {
+        event.key == Key.Escape && !inDialog && !typing &&
+            (state.selectedNodeIds.isNotEmpty() || state.selectedAreaId != null || state.selectedEdgeId != null) -> {
             state.clearSelection()
             true
         }

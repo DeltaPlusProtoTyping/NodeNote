@@ -5,11 +5,12 @@ import com.nodenote.export.MapSceneOptions
 import com.nodenote.export.MapStyle
 import com.nodenote.export.SvgWriter
 import com.nodenote.model.Project
+import com.nodenote.model.privateNodeIds
 
 /**
  * The picture of a board's map that sits next to its notes (`<Board> map.svg`) and is
  * embedded at the top of the board note, so Obsidian shows the map itself — the same
- * vector drawing as the app's SVG export, private nodes left out.
+ * vector drawing as the app's SVG export, private nodes and areas left out.
  */
 object VaultMap {
     /** Marks the file as ours (an SVG has no frontmatter), so the writer may replace or delete it. */
@@ -27,5 +28,8 @@ object VaultMap {
     }
 
     /** True when [project] has something to draw (what [MarkdownRenderer] checks before embedding the file). */
-    fun hasContent(project: Project): Boolean = project.nodes.any { !it.isPrivate } || project.elements.isNotEmpty()
+    fun hasContent(project: Project): Boolean {
+        val hidden = project.privateNodeIds()
+        return project.nodes.any { it.id !in hidden } || project.elements.isNotEmpty()
+    }
 }

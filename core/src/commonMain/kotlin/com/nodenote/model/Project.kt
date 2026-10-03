@@ -19,6 +19,8 @@ data class Project(
     // User-defined types travel with the project so they survive sharing/reopening.
     val customNodeTypes: List<NodeTypeDef> = emptyList(),
     val customEdgeTypes: List<EdgeTypeDef> = emptyList(),
+    /** Named territories behind groups of cards (October 2026; older boards have none). */
+    val areas: List<Area> = emptyList(),
 ) {
     companion object {
         fun empty(): Project = Project(id = newId(), name = "Untitled Board")

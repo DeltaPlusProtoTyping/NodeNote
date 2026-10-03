@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.model.Node
 import com.nodenote.model.NodeCategory
 import com.nodenote.model.NodeStatus
+import com.nodenote.model.areaOf
 import com.nodenote.model.pick
 import com.nodenote.state.AppState
 import com.nodenote.theme.Accent
@@ -59,7 +60,7 @@ import kotlin.math.roundToInt
 
 /**
  * The selected node's toolbar, floating just above its card (below it near the top
- * edge): type, status, rating, private, size, and "+ Child". Everything the
+ * edge): type, status, rating, private, size, "+ Child" and its area. Everything the
  * Details tab can do that matters while mapping, one click from the card — and the
  * same on a phone, where there's no right panel next to the map.
  */
@@ -118,11 +119,31 @@ private fun NodeQuickBar(state: AppState, node: Node, modifier: Modifier = Modif
             Text("Child", fontSize = 11.sp, color = TextPrimary)
             Text("  Tab", fontSize = 9.sp, color = TextFaint)
         }
+        AreaChip(state, node)
+    }
+}
+
+/** The card's area (click to select it), or "+ Area" to draw one around the card and its children. */
+@Composable
+private fun AreaChip(state: AppState, node: Node) {
+    val home = state.shownProject.areaOf(node)
+    if (home != null) {
+        BarChip(onClick = { state.selectArea(home.id) }) {
+            Box(Modifier.size(8.dp).background(Color(home.tint), RoundedCornerShape(2.dp)))
+            Spacer(Modifier.width(5.dp))
+            Text(home.title.ifBlank { "Area" }, fontSize = 11.sp, color = TextSecondary, maxLines = 1)
+        }
+    } else {
+        BarChip(onClick = { state.addAreaAroundBranch(node.id) }) {
+            GlyphIcon(Glyph.Plus, Accent, 10.dp)
+            Spacer(Modifier.width(3.dp))
+            Text("Area", fontSize = 11.sp, color = TextPrimary)
+        }
     }
 }
 
 @Composable
-private fun BarChip(onClick: () -> Unit, highlight: Color? = null, content: @Composable RowScope.() -> Unit) {
+internal fun BarChip(onClick: () -> Unit, highlight: Color? = null, content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier
             .height(26.dp)
