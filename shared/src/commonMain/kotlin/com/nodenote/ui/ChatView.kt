@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -86,7 +87,7 @@ import com.nodenote.theme.color
 @Composable
 fun ChatView(state: AppState, modifier: Modifier = Modifier) {
     val node = state.selectedNode
-    val all = state.messages
+    val all = state.visibleMessages
     val thread = remember(all, node?.id, state.feedInboxOnly) {
         when {
             node != null -> state.threadOf(node.id)
@@ -106,7 +107,7 @@ fun ChatView(state: AppState, modifier: Modifier = Modifier) {
         val created = when {
             filtering || state.feedInboxOnly -> emptyList()
             node != null -> listOfNotNull(node.takeIf { it.createdAt > 0 })
-            else -> state.project.nodes.filter { it.createdAt > 0 }
+            else -> state.shownProject.nodes.filter { it.createdAt > 0 }
         }
         if (created.isEmpty()) messages
         else (messages + created.map(::nodeCreatedEvent)).sortedWith(compareBy<Message>({ it.createdAt }, { it.seq }))
@@ -396,7 +397,7 @@ private fun MessageItem(state: AppState, m: Message, showNodeChip: Boolean, comp
             Row(verticalAlignment = Alignment.Top) {
                 SelectionContainer(Modifier.weight(1f)) {
                     Text(
-                        linkifyMessage(m.text, state.project, Accent) { id -> state.focusNode(id) },
+                        linkifyMessage(m.text, state.project, Accent, state.hiddenNodeIds, onPerson = { state.showPerson(it) }) { id -> state.focusNode(id) },
                         fontSize = 13.sp,
                         color = if (m.kind == MessageKind.Action && m.done) TextFaint else TextPrimary,
                         lineHeight = 18.sp,
@@ -539,7 +540,7 @@ fun NodePickerMenu(state: AppState, expanded: Boolean, includeInbox: Boolean, on
         )
         Spacer(Modifier.height(4.dp))
         if (includeInbox) MenuRow("Back to Unsorted", color = Accent) { onPick("") }
-        state.project.nodes
+        state.shownProject.nodes
             .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
             .sortedBy { it.title.lowercase() }
             .take(40)
@@ -599,6 +600,23 @@ internal fun Composer(state: AppState, node: Node?) {
         val before = value.text.substring(0, match.range.first)
         val after = value.text.substring(value.selection.start)
         val inserted = "[[${n.title}]]"
+        value = TextFieldValue(before + inserted + after, TextRange(before.length + inserted.length))
+    }
+
+    // `@partial` right before the cursor → suggest people already named on the board.
+    val openMention = remember(value) { openMentionBefore(value.text, value.selection.start) }
+    val peopleSuggestions = remember(openMention, state.people) {
+        val (_, partial) = openMention ?: return@remember emptyList()
+        state.people.map { it.name }
+            .filter { it.startsWith(partial, ignoreCase = true) && !it.equals(partial, ignoreCase = true) }
+            .take(5)
+    }
+
+    fun completeMention(name: String) {
+        val (at, _) = openMention ?: return
+        val before = value.text.substring(0, at)
+        val after = value.text.substring(value.selection.start)
+        val inserted = "@$name "
         value = TextFieldValue(before + inserted + after, TextRange(before.length + inserted.length))
     }
 
@@ -673,7 +691,33 @@ internal fun Composer(state: AppState, node: Node?) {
             }
         }
 
-        if (fileTo.isNotEmpty() && suggestions.isEmpty()) {
+        if (peopleSuggestions.isNotEmpty() && suggestions.isEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                peopleSuggestions.forEachIndexed { i, name ->
+                    FilterChip("@$name", selected = i == 0, color = authorColor(name)) {
+                        completeMention(name)
+                        focusRequester.requestFocus()
+                    }
+                }
+            }
+        }
+
+        val typos = remember(value.text, value.selection, state.spell) {
+            state.typosIn(value.text).filterNot { it.end == value.selection.start }
+        }
+        if (typos.isNotEmpty() && suggestions.isEmpty() && peopleSuggestions.isEmpty()) {
+            SpellingSuggestions(state, typos, onReplace = { typo, fix ->
+                val text = value.text.replaceRange(typo.start, typo.end, fix)
+                value = TextFieldValue(text, TextRange((value.selection.start + fix.length - typo.word.length).coerceIn(0, text.length)))
+                focusRequester.requestFocus()
+            })
+        }
+
+        if (fileTo.isNotEmpty() && suggestions.isEmpty() && peopleSuggestions.isEmpty()) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically,
@@ -690,13 +734,18 @@ internal fun Composer(state: AppState, node: Node?) {
                 onValueChange = { value = it },
                 placeholder = when {
                     editing != null -> "Edit message…"
-                    node != null -> "Message ${node.title.ifBlank { "this node" }}…  ([[ links a node)"
+                    node != null -> "Message ${node.title.ifBlank { "this node" }}…  ([[ links a node, @ a person)"
                     else -> "Dump a thought… Enter drops it in Unsorted"
                 },
                 onEnter = {
-                    if (suggestions.isNotEmpty()) completeLink(suggestions.first()) else submit()
+                    when {
+                        suggestions.isNotEmpty() -> completeLink(suggestions.first())
+                        peopleSuggestions.isNotEmpty() -> completeMention(peopleSuggestions.first())
+                        else -> submit()
+                    }
                 },
                 onEscape = { if (editing != null) state.editingMessageId = null },
+                typos = typos,
                 modifier = Modifier.weight(1f).focusRequester(focusRequester),
             )
             Spacer(Modifier.width(6.dp))
@@ -722,6 +771,17 @@ internal fun Composer(state: AppState, node: Node?) {
             }
         }
     }
+}
+
+/** The `@name` being typed right before [cursor]: the @'s index and the partial name, or null. */
+private fun openMentionBefore(text: String, cursor: Int): Pair<Int, String>? {
+    val end = cursor.coerceIn(0, text.length)
+    var i = end - 1
+    while (i >= 0 && (text[i].isLetterOrDigit() || text[i] == '_' || text[i] == '-' || text[i] == '.')) i--
+    if (i < 0 || text[i] != '@') return null
+    if (i > 0 && text[i - 1].isLetterOrDigit()) return null // an e-mail address
+    val partial = text.substring(i + 1, end)
+    return if (partial.isEmpty() || partial.first().isLetter()) i to partial else null
 }
 
 /** One-tap destination: the node's title, with its parent underneath for context. */
@@ -815,9 +875,11 @@ private fun ChatTextField(
     placeholder: String,
     onEnter: () -> Unit,
     onEscape: () -> Unit,
+    typos: List<com.nodenote.spell.Misspelling> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     val appState = LocalAppState.current
     DisposableEffect(appState) {
         onDispose { if (focused) appState?.let { it.activeTextFields-- } }
@@ -828,6 +890,7 @@ private fun ChatTextField(
         onValueChange = onValueChange,
         textStyle = TextStyle(color = TextPrimary, fontSize = 13.sp, lineHeight = 18.sp),
         cursorBrush = SolidColor(Accent),
+        onTextLayout = { layout = it },
         modifier = modifier
             .heightIn(min = 34.dp, max = 320.dp)
             .onFocusChanged {
@@ -859,7 +922,8 @@ private fun ChatTextField(
             }
             .background(PanelBackgroundRaised, shape)
             .border(1.dp, if (focused) Accent else PanelBorder, shape)
-            .padding(horizontal = 9.dp, vertical = 8.dp),
+            .padding(horizontal = 9.dp, vertical = 8.dp)
+            .drawBehind { drawTypoSquiggles(layout, typos, value.text.length) },
         decorationBox = { inner ->
             Box {
                 if (value.text.isEmpty()) Text(placeholder, fontSize = 12.sp, color = TextFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)

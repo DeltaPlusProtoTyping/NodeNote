@@ -2,6 +2,8 @@ package com.nodenote.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -142,7 +144,7 @@ private fun BoardRow(workspace: Workspace, b: BoardSummary) {
 
 private enum class NodeSort(val label: String) { Importance("Importance"), Activity("Recent chat"), Status("Status"), Name("Name") }
 
-private enum class NodeScope(val label: String) { All("All"), Active("Open work"), Solved("Solved"), Unread("Unread") }
+private enum class NodeScope(val label: String) { All("All"), Active("Open work"), Solved("Solved"), Unread("Unread"), Typos("Typos") }
 
 @Composable
 private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) {
@@ -150,19 +152,20 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
     var sort by remember { mutableStateOf(NodeSort.Importance) }
     var scope by remember { mutableStateOf(NodeScope.All) }
     val stats = state.threadStats
-    val nodes = state.project.nodes
+    // A person chip searches for their name (with or without the @) everywhere, chat included.
+    val search = state.personFilter.ifBlank { query }
+    val chatHits = remember(search, state.visibleMessages) { state.nodesWithChatMatching(search) }
+    val nodes = state.shownProject.nodes
         .filter {
             when (scope) {
                 NodeScope.All -> true
                 NodeScope.Active -> it.status.isActive
                 NodeScope.Solved -> it.status == NodeStatus.Solved
                 NodeScope.Unread -> (stats[it.id]?.unread ?: 0) > 0
+                NodeScope.Typos -> state.typosIn(it.title).isNotEmpty()
             }
         }
-        .filter {
-            query.isBlank() || it.title.contains(query, ignoreCase = true) ||
-                it.description.contains(query, ignoreCase = true) || it.owner.contains(query, ignoreCase = true)
-        }
+        .filter { search.isBlank() || state.nodeTextMatches(it, search) || it.id in chatHits }
         .let { list ->
             when (sort) {
                 NodeSort.Importance -> list.sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.title.lowercase() })
@@ -180,15 +183,26 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
         Spacer(Modifier.height(6.dp))
         CompactTextField(
             value = query,
-            onValueChange = { query = it },
+            onValueChange = {
+                query = it
+                if (state.personFilter.isNotEmpty()) state.showPerson("")
+            },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = "Search nodes…",
+            placeholder = "Search nodes and chat…",
             minHeight = 26.dp,
         )
         Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            NodeScope.entries.forEach { s -> FilterChip(s.label, selected = scope == s, color = Accent) { scope = s } }
+        // Titles with typos (once the dictionary has loaded): the Typos chip lists them with one-click fixes.
+        val typoCount = if (state.spell == null) 0 else state.shownProject.nodes.count { state.typosIn(it.title).isNotEmpty() }
+        if (scope == NodeScope.Typos && typoCount == 0) scope = NodeScope.All
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            NodeScope.entries.forEach { s ->
+                if (s == NodeScope.Typos && typoCount == 0) return@forEach
+                val label = if (s == NodeScope.Typos) "Typos $typoCount" else s.label
+                FilterChip(label, selected = scope == s, color = if (s == NodeScope.Typos) TypoRed else Accent) { scope = s }
+            }
         }
+        PeopleRow(state)
         Spacer(Modifier.height(6.dp))
 
         // The inbox: unfiled braindumps posted with no node selected.
@@ -196,7 +210,7 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
         InboxRow(state, inbox?.count ?: 0, inbox?.unread ?: 0, onPicked)
 
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            items(nodes, key = { it.id }) { node -> NodeRow(state, node, onPicked) }
+            items(nodes, key = { it.id }) { node -> NodeRow(state, node, onPicked, showTypoFix = scope == NodeScope.Typos) }
             if (nodes.isEmpty()) {
                 item {
                     Text(
@@ -209,6 +223,57 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
             }
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+}
+
+/**
+ * Everyone @-mentioned on the board. A chip filters the node list and the chat feed
+ * to whatever mentions that person — "everything to bring up with Kurt".
+ */
+@Composable
+private fun PeopleRow(state: AppState) {
+    val people = state.people
+    Spacer(Modifier.height(6.dp))
+    if (people.isEmpty()) {
+        Text("Type @Name in a title or message to track people here.", fontSize = 10.sp, color = TextFaint)
+        return
+    }
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        people.forEach { p ->
+            val active = state.personFilter.equals(p.name, ignoreCase = true)
+            FilterChip("@${p.name} ${p.mentions}", selected = active, color = authorColor(p.name)) {
+                state.showPerson(if (active) "" else p.name)
+            }
+        }
+    }
+}
+
+/** "inneficiencies → Inefficiencies" under a node in the Typos list; a click fixes the title. */
+@Composable
+private fun TypoFixLine(state: AppState, node: Node) {
+    val typo = state.typosIn(node.title).firstOrNull() ?: return
+    val fix = remember(typo.word, state.spell) { state.spell?.suggest(typo.word, 1)?.firstOrNull() }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(typo.word, fontSize = 10.sp, color = TypoRed)
+        if (fix != null) {
+            Text(" → ", fontSize = 10.sp, color = TextFaint)
+            Text(
+                fix,
+                fontSize = 10.sp,
+                color = Accent,
+                modifier = Modifier.clip(RoundedCornerShape(3.dp)).clickable { state.fixTitleTypo(node.id, typo, fix) }.padding(horizontal = 2.dp),
+            )
+        }
+        Text(
+            "  ignore",
+            fontSize = 10.sp,
+            color = TextFaint,
+            modifier = Modifier.clip(RoundedCornerShape(3.dp)).clickable { state.addToDictionary(typo.word) }.padding(horizontal = 2.dp),
+        )
     }
 }
 
@@ -258,7 +323,7 @@ private fun InboxRow(state: AppState, count: Int, unread: Int, onPicked: () -> U
 }
 
 @Composable
-private fun NodeRow(state: AppState, node: Node, onPicked: () -> Unit) {
+private fun NodeRow(state: AppState, node: Node, onPicked: () -> Unit, showTypoFix: Boolean = false) {
     val selected = node.id in state.selectedNodeIds
     val stats = state.threadStats[node.id]
     val typeDef = state.nodeTypeOf(node.type)
@@ -304,6 +369,7 @@ private fun NodeRow(state: AppState, node: Node, onPicked: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (showTypoFix) TypoFixLine(state, node)
         }
         if ((stats?.unread ?: 0) > 0) {
             Spacer(Modifier.width(4.dp))

@@ -2,19 +2,31 @@ package com.nodenote.model
 
 import kotlinx.serialization.Serializable
 
-/** Which part of the project the PNG covers. */
+/** Which part of the board the export covers. */
 @Serializable
 enum class ExportRegion(val label: String) {
     CurrentView("Current view"),
-    AllContent("All content"),
+    AllContent("Whole board"),
     SelectedNodes("Selection"),
 }
 
-/** Rendering theme for the exported image (independent of the editor's dark UI). */
+/** Rendering theme for the export (independent of the editor's dark UI). */
 @Serializable
 enum class ExportTheme(val label: String) {
     Dark("Dark"),
     Light("Light"),
+}
+
+/**
+ * File type. PDF and SVG are vectors: sharp at any zoom, any size, and they open
+ * everywhere (PDF in any PDF viewer, phones included; SVG in any browser). PNG is
+ * for pasting into a chat or a document.
+ */
+@Serializable
+enum class ExportFormat(val label: String, val extension: String) {
+    Pdf("PDF", "pdf"),
+    Svg("SVG", "svg"),
+    Png("PNG", "png"),
 }
 
 /**
@@ -27,25 +39,28 @@ enum class ExportTheme(val label: String) {
  */
 @Serializable
 data class ExportSettings(
-    val region: ExportRegion = ExportRegion.CurrentView,
+    val region: ExportRegion = ExportRegion.AllContent,
     /** World-unit padding around the content for AllContent/SelectedNodes regions. */
     val padding: Float = 48f,
-    /** Resolution multiplier for the output file (preview always renders at 1x). */
-    val scale: Float = 1f,
-    val theme: ExportTheme = ExportTheme.Dark,
-    val transparentBackground: Boolean = true,
+    /** Resolution multiplier for PNG files (preview always renders to fit). */
+    val scale: Float = 2f,
+    val theme: ExportTheme = ExportTheme.Light,
+    val transparentBackground: Boolean = false,
     val showGrid: Boolean = false,
     val showLegend: Boolean = true,
     val legendX: Float = 1f,
     val legendY: Float = 0f,
     val legendScale: Float = 1f,
-    val legendTitle: String = "Connections",
+    val legendTitle: String = "Legend",
     val showEdgeLabels: Boolean = true,
     val showDescriptions: Boolean = true,
-    /** Project-name plate; draggable like the legend. */
-    val showTitleBlock: Boolean = false,
+    /** Board-name plate; draggable like the legend. */
+    val showTitleBlock: Boolean = true,
     val titleBlockX: Float = 0f,
     val titleBlockY: Float = 1f,
+    val format: ExportFormat = ExportFormat.Pdf,
+    /** Private nodes are left out of exports unless this is on. */
+    val includePrivate: Boolean = false,
 )
 
 /** A named, saved copy of export settings. */

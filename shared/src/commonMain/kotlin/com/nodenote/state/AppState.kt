@@ -24,11 +24,17 @@ import com.nodenote.model.NodeTypeDef
 import com.nodenote.model.Project
 import com.nodenote.model.clampImportance
 import com.nodenote.model.edgeType
+import com.nodenote.model.mentionsIn
+import com.nodenote.model.mentionsWord
 import com.nodenote.model.newId
 import com.nodenote.model.nodeType
 import com.nodenote.model.nowMillis
 import com.nodenote.model.rebase
+import com.nodenote.layout.RadialLayout
 import com.nodenote.sort.BoardHierarchy
+import com.nodenote.spell.Misspelling
+import com.nodenote.spell.ShopWords
+import com.nodenote.spell.SpellChecker
 import com.nodenote.sort.NodeMatcher
 import com.nodenote.model.resolveNodeLinks
 import com.nodenote.storage.ClientPrefs
@@ -131,6 +137,7 @@ class AppState(val session: Session) {
         }
         selectedNodeIds = selectedNodeIds.filterTo(mutableSetOf()) { it in valid }
         if (editingNodeId != null && editingNodeId !in valid) editingNodeId = null
+        if (freshNodeId != null && freshNodeId !in valid) freshNodeId = null
         if (editingElementId != null && editingElementId !in valid) editingElementId = null
         if (connectFromId != null && connectFromId !in valid) connectFromId = null
     }
@@ -169,6 +176,22 @@ class AppState(val session: Session) {
         syncedProject = board
         replaceProject(board, "Opened ${board.name}")
         zoomToFitWhenSized = true
+        adoptBuiltinTypes()
+        session.loadSpellChecker()
+    }
+
+    /**
+     * A custom type made before a built-in of the same name existed (a board's own
+     * "Project") hands its nodes over to the built-in, so everyone sees one type. The
+     * custom entry stays on the board (types are never deleted) but is no longer offered.
+     */
+    private fun adoptBuiltinTypes() {
+        val builtinByLabel = BuiltinTypes.nodes.associateBy { it.label.trim().lowercase() }
+        val remap = project.customNodeTypes.mapNotNull { custom ->
+            builtinByLabel[custom.label.trim().lowercase()]?.let { custom.id to it.id }
+        }.toMap()
+        if (remap.isEmpty() || project.nodes.none { it.type in remap }) return
+        project = project.copy(nodes = project.nodes.map { n -> remap[n.type]?.let { n.copy(type = it) } ?: n })
     }
 
     /**
@@ -286,9 +309,14 @@ class AppState(val session: Session) {
 
     // ---- Right panel (dp). Resizable by dragging its inner border, collapsible. ----
 
-    enum class RightTab(val label: String) { Chat("Chat"), Sort("Sort"), KeyDetails("Key details"), Details("Details") }
+    enum class RightTab(val label: String) { Chat("Chat"), Sort("Sort"), Priorities("Priorities"), Details("Details") }
 
     var rightTab by mutableStateOf(RightTab.Chat)
+
+    /** The three ways the Priorities tab answers "what now?". */
+    enum class PrioritySection(val label: String) { QuickWins("Quick wins"), Wins("Wins"), KeyDetails("Key details") }
+
+    var prioritySection by mutableStateOf(PrioritySection.QuickWins)
     var inspectorVisible by mutableStateOf(true)
     var inspectorWidth by mutableStateOf(380f)
         private set
@@ -299,6 +327,62 @@ class AppState(val session: Session) {
 
     /** Chat takes the whole middle of the window (the canvas is hidden) — for long reading/writing sessions. */
     var chatExpanded by mutableStateOf(false)
+
+    // ---- Presenting ----
+    // Private nodes are true but not for everyone's eyes. While presenting (a per-device
+    // switch that survives reloads), they, their connections and their chat disappear from
+    // the map, the lists and the feed, so the screen can be shared.
+
+    var presenting by mutableStateOf(ClientPrefs.presenting)
+        private set
+
+    fun togglePresenting() {
+        presenting = !presenting
+        ClientPrefs.presenting = presenting
+        if (presenting) {
+            val hidden = hiddenNodeIds
+            selectedNodeIds = selectedNodeIds.filterTo(mutableSetOf()) { it !in hidden }
+            if (editingNodeId in hidden) editingNodeId = null
+        }
+        status = if (presenting) "Presenting: private nodes are hidden" else "Private nodes are visible again"
+    }
+
+    private class Shown(val source: Project, val presenting: Boolean, val project: Project, val hidden: Set<String>)
+    private var shownCache: Shown? = null
+
+    private val shown: Shown
+        get() {
+            val p = project
+            shownCache?.let { if (it.source === p && it.presenting == presenting) return it }
+            val hidden = if (presenting) p.nodes.filter { it.isPrivate }.mapTo(HashSet()) { it.id } else emptySet()
+            val visible = if (hidden.isEmpty()) p else p.copy(
+                nodes = p.nodes.filter { it.id !in hidden },
+                edges = p.edges.filter { it.fromNodeId !in hidden && it.toNodeId !in hidden },
+            )
+            return Shown(p, presenting, visible, hidden).also { shownCache = it }
+        }
+
+    /** The board as it may be shown right now: [project] minus private nodes while presenting. */
+    val shownProject: Project get() = shown.project
+
+    /** Nodes hidden right now (the private ones, while presenting). */
+    val hiddenNodeIds: Set<String> get() = shown.hidden
+
+    private var visibleMessagesCache: Triple<List<Message>, Set<String>, List<Message>>? = null
+
+    /** [messages] minus those filed under a hidden node. */
+    val visibleMessages: List<Message>
+        get() {
+            val all = messages
+            val hidden = hiddenNodeIds
+            if (hidden.isEmpty()) return all
+            visibleMessagesCache?.let { (m, h, v) -> if (m === all && h == hidden) return v }
+            return all.filter { it.nodeId !in hidden }.also { visibleMessagesCache = Triple(all, hidden, it) }
+        }
+
+    /** Bumped to hand keyboard focus back to the canvas (after an inline edit), so Tab/Enter keep working. */
+    var canvasFocusRequests by mutableStateOf(0)
+        private set
 
     // ---- Camera ----
     // The canvas transform is: screen = world * (zoom * density) + pan.
@@ -441,9 +525,12 @@ class AppState(val session: Session) {
 
     // ---- Type catalog (built-in + project custom types) ----
 
-    /** All node types available right now: built-ins followed by this project's custom ones. */
+    /** All node types offered right now: built-ins followed by this project's custom ones (minus any a built-in replaced). */
     val allNodeTypes: List<NodeTypeDef>
-        get() = BuiltinTypes.nodes + project.customNodeTypes
+        get() {
+            val builtinLabels = BuiltinTypes.nodes.mapTo(HashSet()) { it.label.trim().lowercase() }
+            return BuiltinTypes.nodes + project.customNodeTypes.filter { it.label.trim().lowercase() !in builtinLabels }
+        }
 
     val allEdgeTypes: List<EdgeTypeDef>
         get() = BuiltinTypes.edges + project.customEdgeTypes
@@ -528,28 +615,29 @@ class AppState(val session: Session) {
     var lastNodeType by mutableStateOf(BuiltinTypes.DEFAULT_NODE)
         private set
 
-    /** Adds a node near the center of the current viewport, cascading slightly so new nodes don't stack exactly. */
+    /** Adds a node near the center of the current viewport (cascading so new nodes don't stack) and starts typing its title. */
     fun addNode(typeId: String) {
         val center = screenToWorld(canvasCenter())
         val cascade = (project.nodes.size % 6) * 18f
         addNodeAt(center + Offset(cascade, cascade), typeId)
     }
 
-    /** Adds a node centered on a world position (double-click on empty canvas). */
+    /** Adds a node centered on a world position (double-click on empty canvas) and starts typing its title. */
     fun addNodeAt(world: Offset, typeId: String = lastNodeType) {
         pushUndo()
-        placeNodeOfType(world, typeId)
+        val node = placeNodeOfType(world, typeId, title = "")
+        beginFreshTitle(node.id, parentId = null)
     }
 
     /** Shared body that creates a node without its own undo step (callers push first). */
-    private fun placeNodeOfType(world: Offset, typeId: String) {
+    private fun placeNodeOfType(world: Offset, typeId: String, title: String? = null): Node {
         lastNodeType = typeId
         noteRecentNodeType(typeId)
         val def = nodeTypeOf(typeId)
         val node = Node(
             id = newId(),
             type = typeId,
-            title = "New ${def.label}",
+            title = title ?: "New ${def.label}",
             x = world.x - Node.DEFAULT_WIDTH / 2f,
             y = world.y - Node.DEFAULT_HEIGHT / 2f,
             // Issues, improvements and action items start out as open work.
@@ -560,12 +648,192 @@ class AppState(val session: Session) {
         project = project.copy(nodes = project.nodes + node)
         selectOnly(node.id)
         status = "Added ${def.label}"
+        return node
     }
 
-    /** Sets a node's type and records it as recently used (called from the inspector type selector). */
+    /**
+     * Mind-map style adding (Tab on a selected node): a new node connected to [parentId],
+     * placed beside it on the side facing away from the goal, ready to type. Its type follows
+     * the parent's other children (siblings are usually alike), else the last type used.
+     */
+    fun addChildNode(parentId: String, typeId: String? = null) {
+        val parent = project.nodes.find { it.id == parentId } ?: return
+        if (parentId in hiddenNodeIds) return
+        pushUndo()
+        val node = placeNodeOfType(freeSpotBeside(parent), typeId ?: childTypeFor(parent), title = "")
+        // Children point at their parent, like the rest of the map.
+        project = project.copy(edges = project.edges + Edge(newId(), node.id, parent.id))
+        beginFreshTitle(node.id, parentId)
+    }
+
+    /** Enter on a selected node: another child of its parent, of the same type. The root (the goal) gets a child instead. */
+    fun addSiblingNode(nodeId: String) {
+        val node = project.nodes.find { it.id == nodeId } ?: return
+        val parent = parentOf(nodeId)
+        if (parent == null) addChildNode(nodeId) else addChildNode(parent.id, node.type)
+    }
+
+    private fun childTypeFor(parent: Node): String {
+        val childIds = hierarchy.parents.filterValues { it == parent.id }.keys
+        val common = project.nodes.filter { it.id in childIds }.groupingBy { it.type }.eachCount().maxByOrNull { it.value }?.key
+        return common ?: lastNodeType.takeIf { it != "Goal" } ?: BuiltinTypes.DEFAULT_NODE
+    }
+
+    /** A node created a moment ago whose title is being typed. Enter then adds the next sibling; left empty, it goes away again. */
+    var freshNodeId by mutableStateOf<String?>(null)
+        private set
+    private var freshParentId: String? = null
+    private var freshUndoDepth = -1
+
+    private fun beginFreshTitle(nodeId: String, parentId: String?) {
+        freshNodeId = nodeId
+        freshParentId = parentId
+        freshUndoDepth = undoStack.size
+        editingNodeId = nodeId
+    }
+
+    /** Double-click or F2: edit an existing node's title in place. */
+    fun startRenaming(nodeId: String) {
+        if (project.nodes.none { it.id == nodeId }) return
+        selectOnly(nodeId)
+        freshNodeId = null
+        editingNodeId = nodeId
+    }
+
+    /** How the inline title editor was left. */
+    enum class TitleEditEnd { Enter, Tab, ShiftTab, Escape, Blur }
+
+    /**
+     * The inline title editor closed. A new node left empty disappears as if never added.
+     * After typing a new child, Enter adds the next sibling and Tab a child of it, so a whole
+     * branch can be typed out without the mouse; Shift+Tab steps back out a level. Escape on
+     * an existing node restores the title it had.
+     */
+    fun endTitleEdit(nodeId: String, end: TitleEditEnd, originalTitle: String) {
+        if (editingNodeId != nodeId) return
+        val fresh = freshNodeId == nodeId
+        val parentId = freshParentId
+        editingNodeId = null
+        freshNodeId = null
+        finishTitleEdit(nodeId, end, originalTitle, fresh, parentId)
+        // Unless another title is being typed now, keys go back to the canvas (Tab, Enter, Delete…).
+        if (editingNodeId == null) canvasFocusRequests++
+    }
+
+    private fun finishTitleEdit(nodeId: String, end: TitleEditEnd, originalTitle: String, fresh: Boolean, parentId: String?) {
+        val node = project.nodes.find { it.id == nodeId } ?: return
+        val title = node.title.trim()
+        if (fresh && title.isEmpty()) {
+            if (end == TitleEditEnd.Tab) beginFreshTitle(nodeId, parentId) // nothing to hang a child on yet
+            else discardFreshNode(nodeId, parentId)
+            return
+        }
+        if (end == TitleEditEnd.Escape && !fresh) {
+            updateNode(nodeId) { it.copy(title = originalTitle) }
+            return
+        }
+        if (title != node.title) updateNode(nodeId) { it.copy(title = title) }
+        when (end) {
+            TitleEditEnd.Enter -> if (fresh && parentId != null) addChildNode(parentId, node.type)
+            TitleEditEnd.Tab -> addChildNode(nodeId)
+            TitleEditEnd.ShiftTab -> parentOf(nodeId)?.let { addSiblingNode(it.id) }
+            else -> Unit
+        }
+    }
+
+    /** Takes back a node that was added but never named — without leaving an undo or redo step behind. */
+    private fun discardFreshNode(id: String, parentId: String?) {
+        val before = undoStack.lastOrNull()
+        if (undoStack.size == freshUndoDepth && before != null && before.nodes.none { it.id == id }) {
+            undoStack = undoStack.dropLast(1)
+            project = before
+        } else {
+            project = project.copy(
+                nodes = project.nodes.filterNot { it.id == id },
+                edges = project.edges.filterNot { it.fromNodeId == id || it.toNodeId == id },
+            )
+        }
+        selectedNodeIds = parentId?.takeIf { pid -> project.nodes.any { it.id == pid } }?.let { setOf(it) } ?: emptySet()
+        status = "Ready"
+    }
+
+    /** Sets a node's type and records it as recently used. */
     fun setNodeType(nodeId: String, typeId: String) {
         updateNode(nodeId) { it.copy(type = typeId) }
         noteRecentNodeType(typeId)
+        lastNodeType = typeId
+    }
+
+    /** Status change, keeping [Node.solvedAt] in step — it dates the Wins list. */
+    fun setNodeStatus(id: String, status: NodeStatus) {
+        val node = project.nodes.find { it.id == id } ?: return
+        if (node.status == status) return
+        pushUndo()
+        updateNode(id) {
+            it.copy(
+                status = status,
+                solvedAt = when {
+                    status != NodeStatus.Solved -> 0L
+                    it.solvedAt > 0 -> it.solvedAt
+                    else -> nowMillis()
+                },
+            )
+        }
+        if (status == NodeStatus.Solved) this.status = "Solved: \"${node.title}\" is on the Wins list"
+    }
+
+    fun setNodeImportance(id: String, value: Int) {
+        pushUndo()
+        updateNode(id) { it.copy(importance = clampImportance(value)) }
+    }
+
+    fun setNodeEffort(id: String, value: Int) {
+        pushUndo()
+        updateNode(id) { it.copy(effort = clampImportance(value)) }
+    }
+
+    fun setNodePrivate(id: String, private: Boolean) {
+        pushUndo()
+        updateNode(id) { it.copy(isPrivate = private) }
+        status = when {
+            !private -> "No longer private"
+            presenting -> "Private: hidden while presenting"
+            else -> "Private: hidden when presenting and left out of exports"
+        }
+        if (private && presenting) selectedNodeIds = selectedNodeIds - id
+    }
+
+    /**
+     * Resizes a card around its top-left corner; everything on it (text included) scales.
+     * [pushUndoStep] is false for the moves of a drag after its first.
+     */
+    fun setNodeScale(id: String, scale: Float, pushUndoStep: Boolean = true) {
+        val node = project.nodes.find { it.id == id } ?: return
+        val s = scale.coerceIn(Node.MIN_SCALE, Node.MAX_SCALE)
+        if (s == node.scale) return
+        if (pushUndoStep) pushUndo()
+        updateNode(id) { n -> n.copy(scale = s, width = n.width / n.scale * s, height = n.height / n.scale * s) }
+    }
+
+    /** Nodes whose title this device just changed: their card may shrink back to fit, not only grow. */
+    private val shrinkAllowed = HashSet<String>()
+
+    fun titleEditedLocally(id: String) {
+        shrinkAllowed.add(id)
+    }
+
+    /**
+     * Keeps a card tall enough for its whole title ([neededBase] = content height at scale 1).
+     * Cards only grow by themselves and shrink back only after this device edited the title,
+     * so two screens measuring text a hair differently can't fight over the height.
+     */
+    fun fitNodeHeight(id: String, neededBase: Float) {
+        val node = project.nodes.find { it.id == id } ?: return
+        val target = max(Node.DEFAULT_HEIGHT, neededBase) * node.scale
+        val shrink = shrinkAllowed.remove(id)
+        if (target > node.height + 0.5f || (shrink && target < node.height - 0.5f)) {
+            updateNode(id) { it.copy(height = target) }
+        }
     }
 
     /** Sets an edge's type and records it as recently used. */
@@ -590,6 +858,22 @@ class AppState(val session: Session) {
                 if (it.id in selectedNodeIds) it.copy(x = it.x + delta.x, y = it.y + delta.y) else it
             },
         )
+    }
+
+    /**
+     * Lays the whole map out around its goal: each branch keeps the side it's on, the rings
+     * spread until no cards overlap (see [RadialLayout]). One undo step.
+     */
+    fun tidyLayout() {
+        if (project.nodes.size < 2) {
+            status = "Nothing to tidy"
+            return
+        }
+        val positions = RadialLayout.layout(project)
+        pushUndo()
+        project = project.copy(nodes = project.nodes.map { n -> positions[n.id]?.let { (x, y) -> n.copy(x = x, y = y) } ?: n })
+        zoomToFit()
+        status = "Tidied the map around the goal (Ctrl+Z puts it back)"
     }
 
     /** Snaps every selected item's top-left corner to the nearest grid point, lining them up with each other. */
@@ -713,6 +997,7 @@ class AppState(val session: Session) {
         selectedNodeIds = selectedNodeIds - ids
         if (connectFromId in ids) connectFromId = null
         if (editingNodeId in ids) editingNodeId = null
+        if (freshNodeId in ids) freshNodeId = null
         if (editingElementId in ids) editingElementId = null
         status = if (count == 1) "Deleted 1 item" else "Deleted $count items"
     }
@@ -926,13 +1211,116 @@ class AppState(val session: Session) {
 
     /** Up to three nodes a thought probably belongs under. */
     fun suggestionsFor(text: String, linkedNodeIds: List<String> = emptyList()): List<Node> =
-        matcher.suggest(text, 3, linkedNodeIds).mapNotNull { s -> project.nodes.find { it.id == s.nodeId } }
+        matcher.suggest(text, 4, linkedNodeIds).mapNotNull { s -> project.nodes.find { it.id == s.nodeId && it.id !in hiddenNodeIds } }.take(3)
+
+    // ---- People and search ----
+
+    /** Someone named with an @ on this board, and how many nodes and messages mention them (with or without the @). */
+    data class Person(val name: String, val mentions: Int)
+
+    private var peopleCache: Triple<Project, List<Message>, List<Person>>? = null
+
+    /** Everyone @-mentioned in titles, notes or chat, most mentioned first. Hidden nodes don't count while presenting. */
+    val people: List<Person>
+        get() {
+            val p = shownProject
+            val m = visibleMessages
+            peopleCache?.let { (cp, cm, people) -> if (cp === p && cm === m) return people }
+            return computePeople(p, m).also { peopleCache = Triple(p, m, it) }
+        }
+
+    private fun computePeople(p: Project, msgs: List<Message>): List<Person> {
+        val names = LinkedHashMap<String, String>()
+        fun collect(text: String) {
+            for (name in mentionsIn(text)) names.getOrPut(name.lowercase()) { name }
+        }
+        p.nodes.forEach { collect(it.title); collect(it.description); collect(it.summary) }
+        msgs.forEach { collect(it.text) }
+        return names.values.map { name ->
+            val inNodes = p.nodes.count { mentionsWord(it.title, name) || mentionsWord(it.description, name) || mentionsWord(it.summary, name) }
+            Person(name, inNodes + msgs.count { mentionsWord(it.text, name) })
+        }.sortedWith(compareByDescending<Person> { it.mentions }.thenBy { it.name.lowercase() })
+    }
+
+    /** Ids of nodes whose chat (own messages, or mentions of them) contains [query]. */
+    fun nodesWithChatMatching(query: String): Set<String> {
+        if (query.isBlank()) return emptySet()
+        val hits = HashSet<String>()
+        for (m in visibleMessages) {
+            if (m.text.contains(query, ignoreCase = true)) {
+                hits.add(m.nodeId)
+                hits.addAll(m.linkedNodeIds)
+            }
+        }
+        return hits
+    }
+
+    /** Text search over a node's own fields (title, notes, owner, keywords, properties). */
+    fun nodeTextMatches(node: Node, query: String): Boolean =
+        query.isBlank() || node.title.contains(query, ignoreCase = true) ||
+            node.description.contains(query, ignoreCase = true) || node.summary.contains(query, ignoreCase = true) ||
+            node.owner.contains(query, ignoreCase = true) || node.keywords.contains(query, ignoreCase = true) ||
+            node.properties.values.any { it.contains(query, ignoreCase = true) }
+
+    // ---- Spelling ----
+
+    /** Words this person told the spell checker to accept (kept on this device). */
+    var customWords by mutableStateOf(ClientPrefs.dictionaryWords)
+        private set
+
+    fun addToDictionary(word: String) {
+        val w = word.trim().lowercase()
+        if (w.isEmpty() || w in customWords) return
+        customWords = customWords + w
+        ClientPrefs.dictionaryWords = customWords
+        status = "\"$word\" won't be marked as a typo any more"
+    }
+
+    private var spellCache: Triple<SpellChecker, List<String>, SpellChecker>? = null
+
+    /** The spell checker plus this board's @people and this person's own words; null until the word list has loaded. */
+    val spell: SpellChecker?
+        get() {
+            val base = session.spellChecker ?: return null
+            val extra = ShopWords + people.map { it.name } + customWords
+            spellCache?.let { (b, e, checker) -> if (b === base && e == extra) return checker }
+            return base.withExtraWords(extra).also { spellCache = Triple(base, extra, it) }
+        }
+
+    /** Misspelled words in [text] (none until the word list has loaded). */
+    fun typosIn(text: String): List<Misspelling> = spell?.misspellings(text).orEmpty()
+
+    /** Replaces one misspelled word in a node's title (one undo step). */
+    fun fixTitleTypo(nodeId: String, typo: Misspelling, replacement: String) {
+        val node = project.nodes.find { it.id == nodeId } ?: return
+        if (typo.end > node.title.length || node.title.substring(typo.start, typo.end) != typo.word) return
+        pushUndo()
+        titleEditedLocally(nodeId)
+        updateNode(nodeId) { it.copy(title = it.title.replaceRange(typo.start, typo.end, replacement)) }
+        status = "Fixed \"${typo.word}\" to \"$replacement\""
+    }
+
+    /** Filter the node list and the chat feed to one person ("" = clear). */
+    var personFilter by mutableStateOf("")
+        private set
+
+    /** Everything about one person: the node list and the chat feed narrowed to their name ("" clears both). */
+    fun showPerson(name: String) {
+        personFilter = name
+        chatSearch = name
+        if (name.isNotEmpty()) {
+            clearSelection()
+            feedInboxOnly = false
+            rightTab = RightTab.Chat
+            inspectorVisible = true
+        }
+    }
 
     fun messageById(id: String): Message? = messageIndex[id]
 
-    /** The node's thread: its own messages plus messages elsewhere that link to it. */
+    /** The node's thread: its own messages plus messages elsewhere that link to it (none from hidden nodes). */
     fun threadOf(nodeId: String): List<Message> =
-        messages.filter { it.nodeId == nodeId || nodeId in it.linkedNodeIds }
+        visibleMessages.filter { it.nodeId == nodeId || nodeId in it.linkedNodeIds }
 
     fun replaceMessages(all: List<Message>) {
         messageIndex.clear()

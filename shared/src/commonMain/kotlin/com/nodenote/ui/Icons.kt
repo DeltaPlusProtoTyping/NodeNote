@@ -27,7 +27,7 @@ import com.nodenote.theme.TextSecondary
  * renders text with its own bundled font, which has no geometric-shape or
  * dingbat glyphs (▾ ▸ ✕ ✓ …) — so they are drawn rather than typed.
  */
-enum class Glyph { ChevronDown, ChevronRight, ChevronLeft, Close, Check }
+enum class Glyph { ChevronDown, ChevronRight, ChevronLeft, Close, Check, Lock, Grip, Plus }
 
 @Composable
 fun GlyphIcon(glyph: Glyph, color: Color, size: Dp = 10.dp, modifier: Modifier = Modifier) {
@@ -47,6 +47,27 @@ fun GlyphIcon(glyph: Glyph, color: Color, size: Dp = 10.dp, modifier: Modifier =
             Glyph.Close -> {
                 drawLine(color, Offset(0.25f * w, 0.25f * h), Offset(0.75f * w, 0.75f * h), strokeWidth, StrokeCap.Round)
                 drawLine(color, Offset(0.75f * w, 0.25f * h), Offset(0.25f * w, 0.75f * h), strokeWidth, StrokeCap.Round)
+            }
+            // Padlock: shackle arc over a filled body.
+            Glyph.Lock -> {
+                drawArc(
+                    color, startAngle = 180f, sweepAngle = 180f, useCenter = false,
+                    topLeft = Offset(0.3f * w, 0.12f * h), size = Size(0.4f * w, 0.42f * h), style = stroke,
+                )
+                drawLine(color, Offset(0.3f * w, 0.33f * h), Offset(0.3f * w, 0.47f * h), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(0.7f * w, 0.33f * h), Offset(0.7f * w, 0.47f * h), strokeWidth, StrokeCap.Round)
+                drawRoundRect(color, Offset(0.18f * w, 0.45f * h), Size(0.64f * w, 0.45f * h), CornerRadius(0.08f * w))
+            }
+            // Resize grip: three diagonal strokes in the bottom-right corner.
+            Glyph.Grip -> {
+                for (k in 1..3) {
+                    val t = 0.28f * k
+                    drawLine(color, Offset((1f - t) * w, 0.92f * h), Offset(0.92f * w, (1f - t) * h), strokeWidth * 0.8f, StrokeCap.Round)
+                }
+            }
+            Glyph.Plus -> {
+                drawLine(color, Offset(0.5f * w, 0.2f * h), Offset(0.5f * w, 0.8f * h), strokeWidth, StrokeCap.Round)
+                drawLine(color, Offset(0.2f * w, 0.5f * h), Offset(0.8f * w, 0.5f * h), strokeWidth, StrokeCap.Round)
             }
         }
     }

@@ -111,7 +111,10 @@ private fun NodeEditor(state: AppState, node: Node) {
     FieldLabel("Title")
     CompactTextField(
         value = node.title,
-        onValueChange = { v -> state.updateNode(node.id) { it.copy(title = v) } },
+        onValueChange = { v ->
+            state.titleEditedLocally(node.id)
+            state.updateNode(node.id) { it.copy(title = v) }
+        },
         modifier = Modifier.fillMaxWidth(),
         placeholder = "Node title",
     )
@@ -125,21 +128,32 @@ private fun NodeEditor(state: AppState, node: Node) {
         modifier = Modifier.fillMaxWidth(),
     )
 
-    FieldLabel("Status")
+    FieldLabel(if (node.status == NodeStatus.Solved && node.solvedAt > 0) "Status — solved ${formatDay(node.solvedAt)}" else "Status")
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         NodeStatus.entries.forEach { s ->
-            StatusPill(s, filled = node.status == s, onClick = {
-                state.pushUndo()
-                state.updateNode(node.id) { it.copy(status = s) }
-            })
+            StatusPill(s, filled = node.status == s, onClick = { state.setNodeStatus(node.id, s) })
         }
     }
 
-    FieldLabel("Importance")
-    ImportancePicker(node.importance, onChange = { v ->
-        state.pushUndo()
-        state.updateNode(node.id) { it.copy(importance = v) }
-    })
+    FieldLabel("Importance — how much it matters")
+    ImportancePicker(node.importance, onChange = { v -> state.setNodeImportance(node.id, v) })
+
+    FieldLabel("Effort — 1 an afternoon · 5 a few weeks · 10 a major project")
+    EffortPicker(node.effort, onChange = { v -> state.setNodeEffort(node.id, v) })
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Pill(
+            if (node.isPrivate) "Private: hidden when presenting" else "Make private",
+            if (node.isPrivate) PrivateAmber else TextFaint,
+            filled = node.isPrivate,
+            onClick = { state.setNodePrivate(node.id, !node.isPrivate) },
+        )
+        Spacer(Modifier.weight(1f))
+        Text("Size", fontSize = 10.sp, color = TextFaint)
+        listOf("S" to 0.8f, "M" to 1f, "L" to 1.5f, "XL" to 2.2f).forEach { (label, scale) ->
+            FilterChip(label, selected = kotlin.math.abs(node.scale - scale) < 0.05f, color = Accent) { state.setNodeScale(node.id, scale) }
+        }
+    }
 
     FieldLabel("Owner")
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -180,7 +194,10 @@ private fun NodeEditor(state: AppState, node: Node) {
     FieldLabel("Description")
     CompactTextField(
         value = node.description,
-        onValueChange = { v -> state.updateNode(node.id) { it.copy(description = v) } },
+        onValueChange = { v ->
+            state.titleEditedLocally(node.id) // the card may need to shrink back
+            state.updateNode(node.id) { it.copy(description = v) }
+        },
         modifier = Modifier.fillMaxWidth(),
         placeholder = "Short description (shown on the card)",
         singleLine = false,

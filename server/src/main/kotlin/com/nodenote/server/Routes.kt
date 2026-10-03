@@ -1,6 +1,7 @@
 package com.nodenote.server
 
 import com.nodenote.api.AccountInfo
+import com.nodenote.api.ApiJson
 import com.nodenote.api.BoardMetaUpdate
 import com.nodenote.api.ChangePasswordRequest
 import com.nodenote.api.ChangeUsernameRequest
@@ -11,8 +12,10 @@ import com.nodenote.api.MessageUpdate
 import com.nodenote.api.PatchRequest
 import com.nodenote.api.ServerInfo
 import com.nodenote.model.Message
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.withCharset
 import io.ktor.server.application.createRouteScopedPlugin
 import io.ktor.server.request.path
 import io.ktor.util.AttributeKey
@@ -20,12 +23,17 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.NotFoundException
 import io.ktor.server.request.receive
+import io.ktor.server.request.receiveText
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 /** Server version reported by `/api/info`; 2.x = the networked, multi-user NodeNote. */
 const val SERVER_VERSION = "2.0.0"
@@ -64,6 +72,13 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
             }
         }
 
+        // The spell checker's word list (resources/dict). Clients ask with ?v=… and keep it for a week.
+        get("/dictionary") {
+            val words = Dictionary.words ?: throw NotFoundException("This build has no word list")
+            call.response.header(HttpHeaders.CacheControl, "private, max-age=604800")
+            call.respondText(words, ContentType.Text.Plain.withCharset(Charsets.UTF_8))
+        }
+
         get("/info") {
             // Set by `tailscale serve` for requests from tailnet users; absent when hit directly.
             val identity = call.request.headers["Tailscale-User-Name"]?.takeIf { it.isNotBlank() }
@@ -89,8 +104,11 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
                     call.respond(store.updateMeta(call.boardId(), update) ?: boardNotFound(call.boardId()))
                 }
                 post("/patch") {
-                    val request = call.receive<PatchRequest>()
-                    call.respond(store.patch(call.boardId(), request) ?: boardNotFound(call.boardId()))
+                    // Read as raw JSON first: which fields the client actually sent matters (see PatchMerge).
+                    val body = ApiJson.parseToJsonElement(call.receiveText()).jsonObject
+                    val request = ApiJson.decodeFromJsonElement(PatchRequest.serializer(), body)
+                    val sent = body["patch"] as? JsonObject
+                    call.respond(store.patch(call.boardId(), request, sent) ?: boardNotFound(call.boardId()))
                 }
                 get("/messages") {
                     val since = call.longParam("since", 0)

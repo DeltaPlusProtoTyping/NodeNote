@@ -37,10 +37,21 @@ import com.nodenote.theme.TextPrimary
 import com.nodenote.theme.TextSecondary
 
 private val shortcutGroups = listOf(
+    "Mapping" to listOf(
+        "Tab" to "New child of the selected node (type its title)",
+        "Enter" to "New sibling of the selected node",
+        "Typing a title: Enter" to "Done; after a new node, starts the next sibling",
+        "Typing a title: Tab" to "Done, then a child of it",
+        "Typing a title: Shift + Tab" to "Done, then back out a level",
+        "Escape / empty Enter" to "Stop (an untitled new node goes away)",
+        "F2" to "Rename the selected node",
+        "Drag the card's corner" to "Make the node bigger or smaller",
+    ),
     "Chat" to listOf(
         "Enter" to "Send message",
         "Shift + Enter" to "New line",
         "[[" to "Link a node (pick from the list, Enter completes)",
+        "@" to "Name a person (they get a filter in the node list)",
         "Escape" to "Cancel editing a message",
     ),
     "Edit" to listOf(
@@ -62,7 +73,7 @@ private val shortcutGroups = listOf(
         "Middle- or right-drag" to "Pan canvas",
     ),
     "Canvas" to listOf(
-        "Double-click empty space" to "Add a node (last-used type)",
+        "Double-click empty space" to "Add a node (last-used type) and type its title",
         "Double-click a node" to "Rename inline",
         "Double-click a text block" to "Edit text",
         "Drag a node's right-edge dot" to "Connect to another node",

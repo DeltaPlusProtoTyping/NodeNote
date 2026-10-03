@@ -1,0 +1,2 @@
+# Keep the generated word list byte-for-byte ('\n' line endings) even where core.autocrlf=true.
+*.txt text eol=lf

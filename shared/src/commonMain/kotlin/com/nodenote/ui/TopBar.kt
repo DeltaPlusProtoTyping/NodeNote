@@ -94,6 +94,7 @@ fun TopBar(workspace: Workspace) {
                 onClick = { state.alignSelected() },
                 enabled = state.selectedNodeIds.isNotEmpty(),
             )
+            ToolbarButton("Tidy", onClick = { state.tidyLayout() }, enabled = loaded && state.project.nodes.size > 1)
             ToolbarButton(
                 "Delete",
                 onClick = { state.deleteSelected() },
@@ -105,6 +106,16 @@ fun TopBar(workspace: Workspace) {
 
             ToolbarButton("Undo", onClick = { state.undo() }, enabled = state.canUndo, color = TextSecondary)
             ToolbarButton("Redo", onClick = { state.redo() }, enabled = state.canRedo, color = TextSecondary)
+
+            ToolbarDivider()
+
+            // Hides private nodes everywhere, for sharing the screen.
+            ToolbarButton(
+                if (state.presenting) "Presenting" else "Present",
+                onClick = { state.togglePresenting() },
+                enabled = loaded,
+                color = if (state.presenting) PrivateAmber else TextSecondary,
+            )
             Spacer(Modifier.width(16.dp))
         }
 
@@ -138,7 +149,7 @@ private fun ToolbarDivider() {
     Spacer(Modifier.width(10.dp))
 }
 
-/** Export ▾ — the board as .json (backup / hand-off) or an image. */
+/** Export ▾ — the board as .json (backup / hand-off) or the map as a picture. */
 @Composable
 private fun ExportMenuButton(workspace: Workspace, enabled: Boolean) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -150,7 +161,7 @@ private fun ExportMenuButton(workspace: Workspace, enabled: Boolean) {
                 onClick = { menuOpen = false; workspace.exportFocusedBoard() },
             )
             DropdownMenuItem(
-                text = { Text("Image (PNG)…", fontSize = 12.sp) },
+                text = { Text("Map as PDF, SVG or PNG…", fontSize = 12.sp) },
                 onClick = { menuOpen = false; workspace.focused.openExportDialog() },
             )
         }

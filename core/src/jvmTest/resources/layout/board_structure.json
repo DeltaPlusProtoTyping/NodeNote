@@ -1,0 +1,635 @@
+{
+ "id": "fixture",
+ "name": "Anonymized board",
+ "nodes": [
+  {
+   "id": "n1",
+   "type": "Issue",
+   "title": "Node n1",
+   "x": 690.7,
+   "y": 269.8,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n2",
+   "type": "Topic",
+   "title": "Node n2",
+   "x": 175.1,
+   "y": 516.7,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n3",
+   "type": "Topic",
+   "title": "Node n3",
+   "x": 175.1,
+   "y": 412.7,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n4",
+   "type": "Improvement",
+   "title": "Node n4",
+   "x": 1153.9,
+   "y": 211.1,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n5",
+   "type": "Improvement",
+   "title": "Node n5",
+   "x": 1153.9,
+   "y": 29.1,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n6",
+   "type": "Improvement",
+   "title": "Node n6",
+   "x": 1174.7,
+   "y": -130.4,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n7",
+   "type": "Idea",
+   "title": "Node n7",
+   "x": 1439.6,
+   "y": -260.4,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n8",
+   "type": "Idea",
+   "title": "Node n8",
+   "x": 1434.7,
+   "y": -156.4,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n9",
+   "type": "Issue",
+   "title": "Node n9",
+   "x": -359.3,
+   "y": 28.3,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n10",
+   "type": "Goal",
+   "title": "Node n10",
+   "x": 364.0,
+   "y": -260.0,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n11",
+   "type": "Issue",
+   "title": "Node n11",
+   "x": 738.4,
+   "y": 19.3,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n12",
+   "type": "Issue",
+   "title": "Node n12",
+   "x": 136.0,
+   "y": -45.0,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n13",
+   "type": "Issue",
+   "title": "Node n13",
+   "x": -218.7,
+   "y": -568.0,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n14",
+   "type": "Issue",
+   "title": "Node n14",
+   "x": 323.9,
+   "y": -798.6,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n15",
+   "type": "Issue",
+   "title": "Node n15",
+   "x": -32.9,
+   "y": 438.7,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n16",
+   "type": "Issue",
+   "title": "Node n16",
+   "x": -359.3,
+   "y": 132.3,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n17",
+   "type": "ActionItem",
+   "title": "Node n17",
+   "x": 7.1,
+   "y": -907.2,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n18",
+   "type": "Question",
+   "title": "Node n18",
+   "x": -32.9,
+   "y": 256.7,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n19",
+   "type": "ActionItem",
+   "title": "Node n19",
+   "x": 446.8,
+   "y": -1024.6,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n20",
+   "type": "Idea",
+   "title": "Node n20",
+   "x": 236.6,
+   "y": -1186.3,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n21",
+   "type": "Idea",
+   "title": "Node n21",
+   "x": 470.6,
+   "y": -1186.3,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n22",
+   "type": "Topic",
+   "title": "Node n22",
+   "x": 1642.7,
+   "y": -208.4,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n23",
+   "type": "Improvement",
+   "title": "Node n23",
+   "x": -584.6,
+   "y": 142.2,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n24",
+   "type": "Improvement",
+   "title": "Node n24",
+   "x": 652.6,
+   "y": -1341.6,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n25",
+   "type": "Improvement",
+   "title": "Node n25",
+   "x": 392.6,
+   "y": -1342.3,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n26",
+   "type": "Issue",
+   "title": "Node n26",
+   "x": 875.5,
+   "y": -426.9,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n27",
+   "type": "Idea",
+   "title": "Node n27",
+   "x": 912.9,
+   "y": -642.9,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n28",
+   "type": "Improvement",
+   "title": "Node n28",
+   "x": 912.1,
+   "y": -776.6,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n29",
+   "type": "Idea",
+   "title": "Node n29",
+   "x": 827.9,
+   "y": -907.7,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n30",
+   "type": "Idea",
+   "title": "Node n30",
+   "x": 1040.6,
+   "y": -906.2,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n31",
+   "type": "System",
+   "title": "Node n31",
+   "x": 1013.3,
+   "y": 378.9,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n32",
+   "type": "Issue",
+   "title": "Node n32",
+   "x": -542.2,
+   "y": -613.3,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n33",
+   "type": "Issue",
+   "title": "Node n33",
+   "x": -539.6,
+   "y": -440.6,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n34",
+   "type": "Issue",
+   "title": "Node n34",
+   "x": -375.6,
+   "y": -295.5,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n35",
+   "type": "Issue",
+   "title": "Node n35",
+   "x": -299.5,
+   "y": -754.0,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n36",
+   "type": "Idea",
+   "title": "Node n36",
+   "x": 1210.8,
+   "y": -476.5,
+   "width": 190.0,
+   "height": 92.0
+  },
+  {
+   "id": "n37",
+   "type": "Improvement",
+   "title": "Node n37",
+   "x": -583.5,
+   "y": 27.3,
+   "width": 190.0,
+   "height": 92.0
+  }
+ ],
+ "edges": [
+  {
+   "id": "e1",
+   "fromNodeId": "n7",
+   "toNodeId": "n6",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e2",
+   "fromNodeId": "n8",
+   "toNodeId": "n6",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e3",
+   "fromNodeId": "n11",
+   "toNodeId": "n10",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e4",
+   "fromNodeId": "n11",
+   "toNodeId": "n6",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e5",
+   "fromNodeId": "n11",
+   "toNodeId": "n5",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e6",
+   "fromNodeId": "n11",
+   "toNodeId": "n4",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e7",
+   "fromNodeId": "n11",
+   "toNodeId": "n1",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e8",
+   "fromNodeId": "n12",
+   "toNodeId": "n10",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e9",
+   "fromNodeId": "n12",
+   "toNodeId": "n3",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e10",
+   "fromNodeId": "n12",
+   "toNodeId": "n2",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e11",
+   "fromNodeId": "n12",
+   "toNodeId": "n9",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e12",
+   "fromNodeId": "n13",
+   "toNodeId": "n10",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e13",
+   "fromNodeId": "n14",
+   "toNodeId": "n10",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e14",
+   "fromNodeId": "n15",
+   "toNodeId": "n3",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e15",
+   "fromNodeId": "n15",
+   "toNodeId": "n2",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e16",
+   "fromNodeId": "n16",
+   "toNodeId": "n12",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e17",
+   "fromNodeId": "n14",
+   "toNodeId": "n17",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e18",
+   "fromNodeId": "n18",
+   "toNodeId": "n3",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e19",
+   "fromNodeId": "n19",
+   "toNodeId": "n14",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e20",
+   "fromNodeId": "n19",
+   "toNodeId": "n20",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e21",
+   "fromNodeId": "n19",
+   "toNodeId": "n21",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e22",
+   "fromNodeId": "n8",
+   "toNodeId": "n22",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e23",
+   "fromNodeId": "n7",
+   "toNodeId": "n22",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e24",
+   "fromNodeId": "n16",
+   "toNodeId": "n23",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e25",
+   "fromNodeId": "n25",
+   "toNodeId": "n21",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e26",
+   "fromNodeId": "n24",
+   "toNodeId": "n21",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e27",
+   "fromNodeId": "n26",
+   "toNodeId": "n11",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e28",
+   "fromNodeId": "n26",
+   "toNodeId": "n21",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e29",
+   "fromNodeId": "n27",
+   "toNodeId": "n26",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e30",
+   "fromNodeId": "n28",
+   "toNodeId": "n27",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e31",
+   "fromNodeId": "n30",
+   "toNodeId": "n28",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e32",
+   "fromNodeId": "n29",
+   "toNodeId": "n28",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e33",
+   "fromNodeId": "n31",
+   "toNodeId": "n11",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e34",
+   "fromNodeId": "n31",
+   "toNodeId": "n1",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e35",
+   "fromNodeId": "n31",
+   "toNodeId": "n4",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e36",
+   "fromNodeId": "n14",
+   "toNodeId": "n13",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e37",
+   "fromNodeId": "n32",
+   "toNodeId": "n13",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e38",
+   "fromNodeId": "n33",
+   "toNodeId": "n13",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e39",
+   "fromNodeId": "n34",
+   "toNodeId": "n13",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e40",
+   "fromNodeId": "n35",
+   "toNodeId": "n13",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e41",
+   "fromNodeId": "n36",
+   "toNodeId": "n26",
+   "label": "",
+   "type": "Relates"
+  },
+  {
+   "id": "e42",
+   "fromNodeId": "n37",
+   "toNodeId": "n9",
+   "label": "",
+   "type": "Relates"
+  }
+ ]
+}

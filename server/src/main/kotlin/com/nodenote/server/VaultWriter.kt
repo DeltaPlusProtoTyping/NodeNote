@@ -96,9 +96,8 @@ class VaultWriter(
     private suspend fun writeLocked(requested: Set<String>) {
         Files.createDirectories(vaultDir)
         val entries = store.vaultEntries()
-        val folders = VaultNames.boardFolders(entries.map { it.summary })
-        // Besides the boards asked for, rewrite any whose folder moved — a rename, or another
-        // board's rename freeing up / taking over a name — and any never written at all.
+        val folders = VaultNames.boardFolders(entries.map { it.summary }, entries.associate { it.summary.id to it.vaultFolder })
+        // Besides the boards asked for, rewrite any never written yet (or whose folder had to change).
         val targets = entries.filter { it.summary.id in requested || it.vaultFolder != folders[it.summary.id] }
         for (entry in targets) {
             val id = entry.summary.id
@@ -135,6 +134,7 @@ class VaultWriter(
         if (written > 0 || stale.isNotEmpty()) {
             log.info("Vault: \"$folder\" — $written written, ${stale.size} removed (${files.size} notes)")
         }
+        writeMap(dir, folder, board)
 
         // Renamed board: clear the generated notes out of the old folder, unless another
         // board has just been given that name.
@@ -176,9 +176,31 @@ class VaultWriter(
         return true
     }
 
-    /** Deletes the generated notes in [dir], then [dir] itself if nothing else is left. */
+    /** The board's map picture ([VaultMap]), rewritten only when it changed and never over a file that isn't ours. */
+    private fun writeMap(dir: Path, folder: String, board: VaultBoard) {
+        val target = dir.resolve(VaultMap.fileName(folder))
+        val svg = if (VaultMap.hasContent(board.project)) runCatching { VaultMap.render(board.project) }.getOrNull() else null
+        val ours = !Files.exists(target) || isGeneratedMap(target)
+        when {
+            !ours -> log.warn("Vault: not overwriting $target — it has no `${VaultMap.MARKER}`")
+            svg == null -> if (Files.exists(target)) deleteQuietly(target)
+            readOrNull(target) != svg -> {
+                val tmp = dir.resolve(".${target.name}.tmp")
+                Files.writeString(tmp, svg)
+                try {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                } catch (e: AtomicMoveNotSupportedException) {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
+        }
+    }
+
+    /** Deletes the generated notes (and map) in [dir], then [dir] itself if nothing else is left. */
     private fun removeGeneratedFolder(dir: Path) {
         if (!dir.isDirectory()) return
+        Files.list(dir).use { s -> s.filter { it.name.endsWith(".svg", ignoreCase = true) }.toList() }
+            .filter(::isGeneratedMap).forEach(::deleteQuietly)
         val removed = markdownFiles(dir).values.filter(::isGenerated)
         removed.forEach(::deleteQuietly)
         val empty = Files.list(dir).use { !it.findAny().isPresent }
@@ -226,6 +248,13 @@ class VaultWriter(
             }
         } catch (e: IOException) {
             false // unreadable or not UTF-8: certainly not ours
+        }
+
+        /** True if [path] is a map picture this writer made (the marker sits in its first lines). */
+        fun isGeneratedMap(path: Path): Boolean = try {
+            Files.newBufferedReader(path).use { reader -> (1..3).any { reader.readLine()?.trim() == VaultMap.MARKER } }
+        } catch (e: IOException) {
+            false
         }
 
         fun readOrNull(path: Path): String? = try {

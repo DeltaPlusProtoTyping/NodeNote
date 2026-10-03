@@ -36,7 +36,9 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 ## Data safety (Ben's standing requirement: updates must never corrupt entered data)
 - Model changes: add fields only WITH defaults; never rename/remove a serialized field or enum
   value. `core/src/commonTest/.../SavedFormatTest.kt` holds golden samples — never edit them to
-  pass; add new ones.
+  pass; add new ones. No nullable fields on board models: `server/.../PatchMerge.kt` keeps any
+  field a client didn't send (an old tab must not reset `Node.isPrivate`/`effort`/`scale`), and
+  with `explicitNulls = false` a null would read as "not sent".
 - DB changes: bump `Database.SCHEMA_VERSION` and append a migration; never edit a released step.
 - Server backs up the DB on every start + daily (`~/.nodenote-server/backups/`, 30 kept).
 - Real deployment: `C:\Users\Benjamin\Apps\nodenote-schedule.ps1` (task "NodeNote Server", port
@@ -60,5 +62,18 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
   whole page) — split text with `Char.isLetterOrDigit()` instead. Test web changes in the browser.
 - Sorting: `core/.../sort/NodeMatcher.kt` (BM25 over node text + filed messages) and
   `BoardHierarchy` (parents = BFS from the most-connected Goal). Old open tabs reload themselves
-  when `/api/info` reports a new `webBuild` (protects new fields like `Node.keywords`).
+  when `/api/info` reports a new `webBuild`; tabs from before 10/1 don't, hence PatchMerge.
+- Cards: `Node.scale` multiplies the whole card (width/height include it; NodeCard lays out at
+  width/scale and scales by zoom×scale, so drag deltas need ×scale). Heights auto-fit the title
+  via `AppState.fitNodeHeight` — grow-only unless this device edited the title, so two clients
+  measuring fonts differently can't ping-pong.
+- Exports: `core/.../export/MapScene.kt` builds one vector `Scene` (Helvetica metrics) that
+  `SvgWriter`/`PdfWriter` write out and `MapExporter` rasterizes for PNG and the dialog preview.
+  Private nodes are left out unless "Include private nodes" is ticked.
+- Tidy = `core/.../layout/RadialLayout.kt`. Spell check = `core/.../spell/SpellChecker.kt` over
+  `server/src/main/resources/dict/en_US.txt` (built by `tools/build_dictionary.py` from
+  LibreOffice's SCOWL en_US Hunspell files), served at `/api/dictionary`; bump
+  `DICTIONARY_VERSION` in `ApiClient.kt` when it changes.
+- The Bash tool mangles `\\n` and apostrophes inside `python - <<'PY'` heredocs: write edit
+  scripts to the scratchpad with the Write tool and run them.
 - Claude's sandbox virtualizes `%APPDATA%`; don't launch the app from Claude tools for real data.

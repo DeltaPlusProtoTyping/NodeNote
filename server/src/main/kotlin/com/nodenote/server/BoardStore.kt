@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -165,13 +166,17 @@ class BoardStore(
      * compute the result itself and gets `project = null`. In every other case —
      * including a no-op patch from a stale client — it gets the merged board back, or
      * it would adopt its own copy as server state and miss the other person's edits.
+     *
+     * [sent] is the patch JSON exactly as received; with it, fields an older client
+     * didn't send are kept rather than reset (see [PatchMerge]).
      */
-    suspend fun patch(id: String, request: PatchRequest): PatchResponse? {
+    suspend fun patch(id: String, request: PatchRequest, sent: JsonObject? = null): PatchResponse? {
         val response = mutex.withLock {
             val state = boards[id] ?: return null
             val revBefore = state.rev
             val current = state.project
-            val next = current.applyPatch(request.patch).copy(id = id)
+            val patch = PatchMerge.keepUnsentFields(request.patch, sent, current)
+            val next = current.applyPatch(patch).copy(id = id)
             val upToDate = request.baseRev == revBefore
             if (next == current) return PatchResponse(revBefore, project = current.takeUnless { upToDate })
 

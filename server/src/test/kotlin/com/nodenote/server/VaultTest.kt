@@ -72,11 +72,41 @@ class VaultTest {
         assertTrue(folder.resolve("Warm-up cycle.md").readText().contains("^m-${msg.id}"))
         assertTrue(mine.exists())
 
-        // Renaming the board moves the mirror; the old folder keeps only the hand-written note.
+        // Renaming the board keeps its folder, so links into it from elsewhere in the vault keep working.
         patch(board.id, 3, BoardPatch(name = "Machining"))
         rebuild()
-        assertTrue(vaultDir.resolve("Machining").resolve("Warm-up cycle.md").exists())
-        assertEquals(listOf("My notes.md"), Files.list(folder).use { s -> s.map { it.fileName.toString() }.toList() })
+        assertFalse(vaultDir.resolve("Machining").exists())
+        assertTrue(folder.resolve("Shop Floor.md").readText().contains("# Machining"))
+        assertTrue(vaultDir.resolve("Boards.md").readText().contains("[[Shop Floor/Shop Floor\\|Machining]]"))
+        assertTrue(mine.exists())
+    }
+
+    @Test
+    fun effortPrivacyAndWinsReachTheVault() = serverTest {
+        val board = createBoard("Wins")
+        val solved = node("a", "Decrease QC time", type = "Improvement")
+            .copy(status = NodeStatus.Solved, solvedAt = 1_791_000_000_000, importance = 8, effort = 3)
+        val secret = node("b", "Pushback", createdAt = 2).copy(isPrivate = true)
+        val quick = node("c", "Label the bins", type = "Idea", createdAt = 3).copy(importance = 7, effort = 2)
+        patch(board.id, 1, BoardPatch(upsertNodes = listOf(solved, secret, quick)))
+        rebuild()
+
+        val folder = vaultDir.resolve("Wins")
+        val note = folder.resolve("Decrease QC time.md").readText()
+        assertTrue("importance: 8\neffort: 3\nsolved: 2026-" in note, note)
+        val secretNote = folder.resolve("Pushback.md").readText()
+        assertTrue("private: true" in secretNote, secretNote)
+        assertTrue("tags: [nodenote, topic, private]" in secretNote, secretNote)
+        val index = folder.resolve("Wins.md").readText()
+        assertTrue("## Wins\n\n- 2026-" in index, index)
+        assertTrue("[[Wins/Pushback|Pushback]] · private" in index, index)
+        // The map picture: embedded in the board note, the public nodes on it, the private one not.
+        assertTrue("![[Wins/Wins map.svg]]" in index, index)
+        val map = folder.resolve("Wins map.svg").readText()
+        assertTrue(VaultMap.MARKER in map.lines().take(3), map.take(200))
+        assertTrue("Label the bins" in map)
+        assertFalse("Pushback" in map)
+        assertTrue("## Quick wins\n\n- [[Wins/Label the bins|Label the bins]] · importance 7, effort 2" in index, index)
     }
 
     @Test
@@ -112,6 +142,11 @@ class VaultTest {
         assertEquals(
             mapOf("old" to "Ops", "new" to "OPS (2)"),
             VaultNames.boardFolders(listOf(summary("new", "OPS", 2), summary("old", "Ops", 1))),
+        )
+        // A board keeps the folder it has, whatever it's called now; a newcomer can't take it.
+        assertEquals(
+            mapOf("a" to "Old name", "b" to "Old name (2)"),
+            VaultNames.boardFolders(listOf(summary("a", "New name", 1), summary("b", "Old name", 2)), mapOf("a" to "Old name")),
         )
     }
 

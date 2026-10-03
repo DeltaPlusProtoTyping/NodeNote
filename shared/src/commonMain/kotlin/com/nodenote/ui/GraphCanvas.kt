@@ -3,6 +3,7 @@ package com.nodenote.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nodenote.model.BuiltinTypes
 import com.nodenote.model.Project
 import com.nodenote.model.edgeType
 import com.nodenote.state.AppState
@@ -103,6 +105,11 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
 
     // Keep AppState's camera math in sync with the actual viewport metrics.
     SideEffect { state.viewDensity = density }
+
+    // Back to the canvas after an inline title edit, so Tab / Enter / Delete keep working.
+    LaunchedEffect(state, state.canvasFocusRequests) {
+        if (state.canvasFocusRequests > 0) focusRequester.requestFocus()
+    }
 
     // A freshly loaded board is framed once the canvas knows its size.
     val canvasReady = state.canvasSize.width > 0
@@ -220,9 +227,17 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
         for (element in state.project.elements) {
             key(element.id) { ElementView(element, state) }
         }
-        for (node in state.project.nodes) {
+        // While presenting, private nodes aren't drawn at all.
+        for (node in state.shownProject.nodes) {
             key(node.id) { NodeCard(node, state) }
         }
+
+        val selected = state.selectedNode
+        if (selected != null && selected.id !in state.hiddenNodeIds && state.connectFromId == null && state.marquee == null) {
+            NodeQuickBarOverlay(state, selected)
+        }
+
+        if (state.presenting) PresentingBadge(state, Modifier.align(Alignment.TopStart).padding(10.dp))
 
         if (state.project.nodes.isEmpty() && state.project.elements.isEmpty()) {
             EmptyCanvasHint(Modifier.align(Alignment.Center))
@@ -275,7 +290,7 @@ private fun DrawScope.drawDotGrid(pan: Offset, zoom: Float, density: Float) {
 
 private fun DrawScope.drawEdges(state: AppState, textMeasurer: TextMeasurer) {
     drawProjectEdges(
-        project = state.project,
+        project = state.shownProject,
         pan = state.pan,
         k = state.zoom * state.viewDensity,
         zoom = state.zoom,
@@ -285,9 +300,10 @@ private fun DrawScope.drawEdges(state: AppState, textMeasurer: TextMeasurer) {
 }
 
 /**
- * Draws every edge as a grey arrow trimmed to the card borders, with a small
- * "connection node" at the midpoint colored by the edge's type (Power, Data,
- * Signal, …) and the optional label just below it.
+ * Draws every edge trimmed to the card borders. A plain "Relates to" link is just
+ * a line (which way it was drawn means nothing); typed links (Causes, Blocks,
+ * Solves…) get an arrowhead and a small "connection node" at the midpoint in the
+ * type's color. The optional label sits just below the midpoint.
  *
  * Internal (not private) because the PNG exporter reuses it with the same
  * camera parameters and an empty selection. [k] = zoom * density.
@@ -323,15 +339,16 @@ internal fun DrawScope.drawProjectEdges(
             strokeWidth = (1.4f * k).coerceIn(1f, 3f),
             cap = StrokeCap.Round,
         )
-        drawArrowHead(color, start, end, sizePx = 7f * k.coerceIn(0.6f, 1.8f))
-
-        // Midpoint connection node: disc with a ring + dot in the edge type's color.
         val mid = (start + end) / 2f
         val radius = 5f * k.coerceIn(0.6f, 1.6f)
-        val typeColor = project.edgeType(edge.type).color
-        drawCircle(style.chipFill, radius, mid)
-        drawCircle(typeColor, radius * 0.42f, mid)
-        drawCircle(typeColor, radius, mid, style = Stroke(width = (1.2f * k).coerceIn(1f, 2.5f)))
+        if (edge.type != BuiltinTypes.DEFAULT_EDGE) {
+            drawArrowHead(color, start, end, sizePx = 7f * k.coerceIn(0.6f, 1.8f))
+            // Midpoint connection node: disc with a ring + dot in the edge type's color.
+            val typeColor = project.edgeType(edge.type).color
+            drawCircle(style.chipFill, radius, mid)
+            drawCircle(typeColor, radius * 0.42f, mid)
+            drawCircle(typeColor, radius, mid, style = Stroke(width = (1.2f * k).coerceIn(1f, 2.5f)))
+        }
 
         if (edge.label.isNotBlank() && showLabels) {
             val textStyle = TextStyle(
@@ -411,6 +428,35 @@ private fun DrawScope.drawArrowHead(color: Color, start: Offset, end: Offset, si
     drawPath(path, color)
 }
 
+/** Reminder that this screen is in presentation mode, with the way out. */
+@Composable
+private fun PresentingBadge(state: AppState, modifier: Modifier = Modifier) {
+    val hidden = state.hiddenNodeIds.size
+    Row(
+        modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(PanelBackground.copy(alpha = 0.92f))
+            .border(1.dp, PrivateAmber.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlyphIcon(Glyph.Lock, PrivateAmber, 11.dp)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "Presenting" + if (hidden > 0) " · $hidden private hidden" else "",
+            fontSize = 12.sp,
+            color = TextPrimary,
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "Stop",
+            fontSize = 12.sp,
+            color = Accent,
+            modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { state.togglePresenting() }.padding(horizontal = 4.dp, vertical = 1.dp),
+        )
+    }
+}
+
 @Composable
 private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
     Column(
@@ -430,6 +476,7 @@ private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
         Text("An empty board — map the topics, then talk under each one.", fontSize = 12.sp, color = TextSecondary)
         Spacer(Modifier.height(20.dp))
         EmptyHintRow("Add", "+ Add Node, or double-click the canvas")
+        EmptyHintRow("Branch", "select a node: Tab adds a child, Enter a sibling")
         EmptyHintRow("Chat", "select a node; the chat panel is on the right")
         EmptyHintRow("Braindump", "nothing selected = post to the board inbox")
         EmptyHintRow("Rate", "mark key details 1–10 as you write them")

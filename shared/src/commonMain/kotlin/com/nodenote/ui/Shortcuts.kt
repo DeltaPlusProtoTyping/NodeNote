@@ -103,6 +103,19 @@ fun handleShortcut(workspace: Workspace, event: KeyEvent): Boolean {
             state.resetView()
             true
         }
+        // Mind-map keys on the selected node: Tab = new child, Enter = new sibling, F2 = rename.
+        event.key == Key.Tab && !typing && !inDialog && state.selectedNode != null -> {
+            state.addChildNode(state.selectedNode!!.id)
+            true
+        }
+        (event.key == Key.Enter || event.key == Key.NumPadEnter) && !typing && !inDialog && state.selectedNode != null -> {
+            state.addSiblingNode(state.selectedNode!!.id)
+            true
+        }
+        event.key == Key.F2 && !typing && !inDialog && state.selectedNode != null -> {
+            state.startRenaming(state.selectedNode!!.id)
+            true
+        }
         event.key == Key.Escape && !inDialog && !typing && state.connectFromId != null -> {
             state.cancelConnection()
             true

@@ -113,7 +113,7 @@ private fun SortCard(state: AppState, m: Message) {
             }
         }
         Text(
-            linkifyMessage(m.text, state.project, Accent) { state.focusNode(it) },
+            linkifyMessage(m.text, state.project, Accent, state.hiddenNodeIds, onPerson = { state.showPerson(it) }) { state.focusNode(it) },
             fontSize = 13.sp,
             color = TextPrimary,
             lineHeight = 18.sp,

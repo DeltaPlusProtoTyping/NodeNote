@@ -28,6 +28,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
@@ -55,6 +56,9 @@ class ApiClient(serverUrl: String) {
     }
 
     suspend fun info(): ServerInfo = http.get("$baseUrl/api/info").body()
+
+    /** The spell checker's word list (one lowercase word per line). The version busts the week-long cache when it changes. */
+    suspend fun dictionary(): String = http.get("$baseUrl/api/dictionary") { parameter("v", DICTIONARY_VERSION) }.bodyAsText()
 
     // ---- account ----
 
@@ -113,3 +117,6 @@ class ApiClient(serverUrl: String) {
         setBody(body)
     }
 }
+
+/** Bump when server/src/main/resources/dict changes. */
+const val DICTIONARY_VERSION = 1

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.nodenote.api.ServerInfo
 import com.nodenote.net.ApiClient
+import com.nodenote.spell.SpellChecker
 import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.defaultServerUrl
 import io.ktor.client.plugins.ResponseException
@@ -56,6 +57,28 @@ class Session {
     /** Human-readable reason for the last failure, shown on hover/in settings. */
     var lastError by mutableStateOf<String?>(null)
         private set
+
+    /** Offline spell checker; null until its word list has loaded (see [loadSpellChecker]). */
+    var spellChecker by mutableStateOf<SpellChecker?>(null)
+        private set
+    private var spellLoading = false
+
+    /** Fetches the word list once, in the background. Without it there's simply no spell check. */
+    fun loadSpellChecker() {
+        if (spellChecker != null || spellLoading || !signedIn) return
+        spellLoading = true
+        scope.launch {
+            try {
+                spellChecker = SpellChecker(api.dictionary())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Old server or offline: try again next time a board opens.
+            } finally {
+                spellLoading = false
+            }
+        }
+    }
 
     var serverInfo by mutableStateOf<ServerInfo?>(null)
         private set

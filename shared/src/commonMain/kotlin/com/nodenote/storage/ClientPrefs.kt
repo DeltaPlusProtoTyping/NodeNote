@@ -42,6 +42,20 @@ object ClientPrefs {
             ProjectStorage.writePrefs("open_boards.json", json.encodeToString(idList, value))
         }
 
+    /** Presentation mode (private nodes hidden). Kept per device so a reload mid-meeting doesn't reveal them. */
+    var presenting: Boolean
+        get() = ProjectStorage.readPrefs("presenting.txt")?.trim() == "1"
+        set(value) {
+            ProjectStorage.writePrefs("presenting.txt", if (value) "1" else "0")
+        }
+
+    /** Words this person told the spell checker to accept (per device). */
+    var dictionaryWords: List<String>
+        get() = decode(ProjectStorage.readPrefs("dictionary.json"), idList) ?: emptyList()
+        set(value) {
+            ProjectStorage.writePrefs("dictionary.json", json.encodeToString(idList, value))
+        }
+
     /** nodeId ("" = board inbox) → highest message seq this user has seen in that thread. */
     fun lastRead(boardId: String): Map<String, Long> =
         decode(ProjectStorage.readPrefs("read_$boardId.json"), readMap) ?: emptyMap()

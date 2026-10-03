@@ -75,7 +75,10 @@ private fun downloadJs(name: String, base64: String): Unit = js(
     const bin = atob(base64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([bytes]));
+    // A real type lets phones open a PDF or picture straight away instead of "unknown file".
+    const ext = name.split('.').pop().toLowerCase();
+    const types = { pdf: 'application/pdf', svg: 'image/svg+xml', png: 'image/png', json: 'application/json' };
+    const url = URL.createObjectURL(new Blob([bytes], { type: types[ext] || 'application/octet-stream' }));
     const a = document.createElement('a');
     a.href = url;
     a.download = name;

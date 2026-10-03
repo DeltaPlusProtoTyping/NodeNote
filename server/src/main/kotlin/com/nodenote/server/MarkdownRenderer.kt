@@ -7,7 +7,10 @@ import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
 import com.nodenote.model.NodeLinkRegex
 import com.nodenote.model.NodeStatus
+import com.nodenote.model.Pick
 import com.nodenote.model.Project
+import com.nodenote.model.isOpenWork
+import com.nodenote.model.pick
 import com.nodenote.model.edgeType
 import com.nodenote.model.nodeType
 import java.time.Instant
@@ -51,11 +54,21 @@ object VaultNames {
         return name
     }
 
-    /** Board id → folder name. The older of two same-named boards keeps the plain name. */
-    fun boardFolders(boards: List<BoardSummary>): Map<String, String> {
+    /**
+     * Board id → folder name. A board keeps the folder it already has ([current]), even after a
+     * rename, so links into it from elsewhere in the vault keep working. New boards get their
+     * sanitized name; the older of two same-named boards keeps the plain name.
+     */
+    fun boardFolders(boards: List<BoardSummary>, current: Map<String, String?> = emptyMap()): Map<String, String> {
         val used = HashSet<String>()
-        return boards.sortedWith(compareBy({ it.createdAt }, { it.id }))
-            .associate { it.id to unique(sanitize(it.name), used) }
+        val ordered = boards.sortedWith(compareBy({ it.createdAt }, { it.id }))
+        val result = HashMap<String, String>()
+        for (b in ordered) {
+            val kept = current[b.id]?.takeIf { it.isNotBlank() && sanitize(it) == it }
+            if (kept != null && used.add(kept.lowercase())) result[b.id] = kept
+        }
+        for (b in ordered) if (b.id !in result) result[b.id] = unique(sanitize(b.name), used)
+        return result
     }
 
     /**
@@ -169,6 +182,9 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .str("type", project.nodeType(node.type).label)
                 .apply { if (node.status != NodeStatus.None) raw("status", yamlScalar(node.status.label)) }
                 .apply { if (node.importance > 0) raw("importance", node.importance) }
+                .apply { if (node.effort > 0) raw("effort", node.effort) }
+                .apply { if (node.solvedAt > 0) raw("solved", date(node.solvedAt)) }
+                .apply { if (node.isPrivate) raw("private", true) }
                 .apply { if (node.owner.isNotBlank()) str("owner", node.owner.trim()) }
                 .apply { if (node.keywords.isNotBlank()) str("keywords", node.keywords.trim()) }
                 .apply { if (node.createdAt > 0) raw("created", date(node.createdAt)) }
@@ -176,7 +192,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .raw("messages", own.size)
                 .raw("key_details", keyDetails.size)
                 .apply { if (summary.archived) raw("archived", true) }
-                .tags(listOfNotNull("nodenote", typeTag(node), statusTag(node.status)))
+                .tags(listOfNotNull("nodenote", typeTag(node), statusTag(node.status), "private".takeIf { node.isPrivate }))
 
             val connections = project.edges.mapNotNull { edge ->
                 val type = project.edgeType(edge.type).label
@@ -246,12 +262,13 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
             val openTable = open.takeIf { it.isNotEmpty() }?.let { nodes ->
                 buildString {
                     append("## Open work\n\n")
-                    append("| Node | Type | Status | Importance | Owner | Msgs |\n")
-                    append("|---|---|---|---:|---|---:|\n")
+                    append("| Node | Type | Status | Importance | Effort | Owner | Msgs |\n")
+                    append("|---|---|---|---:|---:|---|---:|\n")
                     for (n in nodes) {
                         val importance = if (n.importance > 0) n.importance.toString() else ""
+                        val effort = if (n.effort > 0) n.effort.toString() else ""
                         append("| ${link(n, inTable = true)} | ${plain(project.nodeType(n.type).label)} | ${n.status.label} ")
-                        append("| $importance | ${plain(n.owner)} | ${byHome[n.id].orEmpty().size} |\n")
+                        append("| $importance | $effort | ${plain(n.owner)} | ${byHome[n.id].orEmpty().size} |\n")
                     }
                 }.trimEnd()
             }
@@ -263,6 +280,8 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                         val extras = buildList {
                             if (n.status != NodeStatus.None) add(n.status.label)
                             if (n.importance > 0) add("★${n.importance}")
+                            if (n.effort > 0) add("effort ${n.effort}")
+                            if (n.isPrivate) add("private")
                             byHome[n.id]?.size?.let { add(if (it == 1) "1 message" else "$it messages") }
                         }
                         "- ${link(n)}" + extras.joinToString("") { " · $it" }
@@ -274,15 +293,28 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .sortedWith(compareByDescending<Message> { it.importance }.thenByDescending { it.createdAt })
                 .take(BOARD_KEY_DETAILS)
             val recent = live.asReversed().take(RECENT_ACTIVITY)
+            val quickWins = project.nodes.filter { it.isOpenWork && it.pick == Pick.QuickWin }
+                .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.effort }.thenBy { it.title.lowercase() })
+                .map { n -> "- ${link(n)} · importance ${n.importance}, effort ${n.effort}" + (if (n.isPrivate) " · private" else "") }
+            val wins = project.nodes.filter { it.status == NodeStatus.Solved }
+                .sortedWith(compareByDescending<Node> { it.solvedAt }.thenBy { it.title.lowercase() })
+                .map { n ->
+                    val day = if (n.solvedAt > 0) date(n.solvedAt) else "Solved"
+                    "- $day · ${link(n)} · ${plain(project.nodeType(n.type).label)}" + (if (n.isPrivate) " · private" else "")
+                }
 
             return document(
                 fm,
                 "# ${plain(project.name)}",
                 if (summary.archived) "> [!note] Archived board" else null,
+                // The map itself (written next to the notes by VaultWriter; private nodes left out).
+                if (VaultMap.hasContent(project)) "![[$folder/${VaultMap.fileName(folder)}]]" else null,
                 inbox.takeIf { it.isNotEmpty() }?.let {
                     "Unfiled: ${wikiLink("$folder/${VaultNames.INBOX}", VaultNames.INBOX)} (${it.size})"
                 },
+                section("Quick wins", quickWins),
                 openTable,
+                section("Wins", wins),
                 allNodes,
                 section("Key details", keyDetails.map { keyDetail(it, from = null, withNode = true) }),
                 section("Recent activity", recent.map { m ->

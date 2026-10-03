@@ -42,8 +42,8 @@ import com.nodenote.theme.TextSecondary
 import com.nodenote.theme.color
 
 /**
- * Right side of the window: Chat (the main event), Key details (everything
- * rated at or above a threshold), and Details (the node inspector).
+ * Right side of the window: Chat (the main event), Sort (the unsorted pile),
+ * Priorities (quick wins, wins, key details), and Details (the node inspector).
  */
 @Composable
 fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean = false) {
@@ -78,7 +78,7 @@ fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean 
             }
             state.rightTab == AppState.RightTab.Chat -> ChatView(state, Modifier.fillMaxSize())
             state.rightTab == AppState.RightTab.Sort -> SortView(state, Modifier.fillMaxSize())
-            state.rightTab == AppState.RightTab.KeyDetails -> KeyDetailsView(state, Modifier.fillMaxSize())
+            state.rightTab == AppState.RightTab.Priorities -> PrioritiesView(state, Modifier.fillMaxSize())
             else -> DetailsView(state, Modifier.fillMaxSize())
         }
     }
@@ -110,123 +110,5 @@ fun UnreadBadge(count: Int) {
         contentAlignment = Alignment.Center,
     ) {
         Text(if (count > 99) "99+" else count.toString(), style = tightText(9.sp, FontWeight.Bold, Color.White))
-    }
-}
-
-/**
- * Key details: messages rated at or above the threshold, most important
- * first — for the selected node's thread or the whole board. "Copy" puts them
- * on the clipboard as a markdown list (ready for an email, a report, or an AI
- * summary prompt).
- */
-@Composable
-private fun KeyDetailsView(state: AppState, modifier: Modifier) {
-    val node = state.selectedNode
-    val wholeBoard = node == null || state.keyDetailWholeBoard
-    val source = if (wholeBoard) state.messages else state.threadOf(node!!.id)
-    val details = remember(source, state.keyDetailThreshold) {
-        source.filter { it.importance >= state.keyDetailThreshold }
-            .sortedWith(compareByDescending<Message> { it.importance }.thenByDescending { it.createdAt })
-    }
-    val clipboard = LocalClipboardManager.current
-
-    Column(modifier) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Rated", fontSize = 11.sp, color = TextSecondary)
-                listOf(3, 5, 7, 9).forEach { t ->
-                    FilterChip("$t+", selected = state.keyDetailThreshold == t, color = importanceColor(t)) { state.keyDetailThreshold = t }
-                }
-                Spacer(Modifier.weight(1f))
-                if (node != null) {
-                    FilterChip("This node", selected = !state.keyDetailWholeBoard, color = Accent) { state.keyDetailWholeBoard = false }
-                    FilterChip("Board", selected = state.keyDetailWholeBoard, color = Accent) { state.keyDetailWholeBoard = true }
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${details.size} key detail${if (details.size == 1) "" else "s"}" +
-                        if (wholeBoard) " on this board" else " for ${node!!.title.ifBlank { "(untitled)" }}",
-                    fontSize = 11.sp,
-                    color = TextFaint,
-                    modifier = Modifier.weight(1f),
-                )
-                if (details.isNotEmpty()) {
-                    CompactOutlinedButton("Copy as list", onClick = {
-                        clipboard.setText(AnnotatedString(keyDetailsMarkdown(state, details)))
-                        state.status = "Copied ${details.size} key details"
-                    })
-                }
-            }
-        }
-        HorizontalDivider(color = PanelBorder)
-        if (details.isEmpty()) {
-            Text(
-                "Nothing rated ${state.keyDetailThreshold}+ yet. Rate messages with the 1–10 scale " +
-                    "(\"Rate\" on hover, or pick it before sending).",
-                fontSize = 12.sp,
-                color = TextFaint,
-                lineHeight = 17.sp,
-                modifier = Modifier.padding(16.dp),
-            )
-        } else {
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(details, key = { it.id }) { m -> KeyDetailRow(state, m, showNode = wholeBoard) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun KeyDetailRow(state: AppState, m: Message, showNode: Boolean) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable {
-                if (m.nodeId.isNotEmpty()) state.focusNode(m.nodeId)
-                state.rightTab = AppState.RightTab.Chat
-            }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        ImportanceBadge(m.importance, size = 22.dp)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(m.author, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = authorColor(m.author))
-                Text("  ${formatStamp(m.createdAt)}", fontSize = 10.sp, color = TextFaint)
-                if (m.kind != MessageKind.Note) {
-                    Spacer(Modifier.width(6.dp))
-                    KindPill(m.kind)
-                }
-            }
-            if (showNode) {
-                val node = state.project.nodes.find { it.id == m.nodeId }
-                Text(
-                    node?.title?.ifBlank { "(untitled)" } ?: if (m.nodeId.isEmpty()) "Unsorted" else "(removed node)",
-                    fontSize = 10.sp,
-                    color = node?.let { state.nodeTypeOf(it.type).color } ?: TextFaint,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                linkifyMessage(m.text, state.project, Accent) { state.focusNode(it) },
-                fontSize = 12.sp,
-                color = TextPrimary,
-                lineHeight = 17.sp,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-    HorizontalDivider(Modifier.padding(start = 44.dp), color = PanelBorder.copy(alpha = 0.5f))
-}
-
-private fun keyDetailsMarkdown(state: AppState, details: List<Message>): String = buildString {
-    appendLine("Key details — ${state.project.name}")
-    for (m in details) {
-        val node = state.project.nodes.find { it.id == m.nodeId }?.title ?: "Unsorted"
-        val kind = if (m.kind != MessageKind.Note) " ${m.kind.label}:" else ""
-        appendLine("- [${m.importance}/10]$kind ${m.text.replace('\n', ' ')} — $node (${m.author}, ${formatStamp(m.createdAt)})")
     }
 }

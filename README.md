@@ -19,12 +19,16 @@ server you host on your own PC and reach over **Tailscale**.
 | Concept | What it is |
 |---|---|
 | **Board** | One map of related topics — *Shop floor*, *Estimating*, *Q4 improvements*. Listed on the left. |
-| **Node** | A topic on the board: Issue, Improvement, Idea, Decision, Action Item, Machine, Process, Tooling, Customer, Quote… Has a **status** (Open → In progress → Blocked → Solved / Parked), **importance** 1–10, **owner**, and a **summary** of where it stands. |
+| **Node** | A topic on the board: Issue, Improvement, Idea, Decision, Action, Project, Machine, Process, Tooling, Customer, Quote… Has a **status** (Open → In progress → Blocked → Solved / Parked), **importance** and **effort** 1–10, **owner**, and a **summary** of where it stands. The card shows the whole title and grows to fit it; drag its bottom-right corner (or pick a size) to make a node bigger. |
+| **Mapping** | Select a node: **Tab** adds a child (placed on the side away from the goal, ready to type), **Enter** a sibling. While typing a new node's title, Enter starts the next sibling and Tab a child of it, so a branch can be typed out without the mouse. The bar above the selected card sets type, status, rating, Private and size. **Tidy** lays the whole map out around the goal, keeping each branch on its side (undo puts it back). |
 | **Chat** | Select a node → its thread opens on the right. Messages have a **kind** (Note, Issue, Idea, Decision, Action, Fix) and an optional **importance 1–10**. Actions get a done checkbox. |
 | **Links across nodes** | Type `[[` in a message to link another node. The message then also shows in that node's chat ("mentioned in"), and the link is clickable. |
 | **Dump & sort** | With nothing selected, the chat box is a dump bar: type a thought and press Enter, and it goes to **Unsorted**. As you type it suggests where the thought belongs; tap one to file it there directly. The **Sort** tab works through the Unsorted pile: each thought gets its best-matching nodes (with their parent branch) as one-tap chips, plus *Other node…* and *New node under…*, which hangs a new node off the right branch. Nothing is filed automatically. Matching is keyword relevance over titles, the node **Keywords** field, descriptions and everything already filed under each node, so it improves as you sort. |
 | **Board feed** | Nothing selected = every message on the board, tagged with its node; filter by importance (5+/7+/9+), kind, or text. |
-| **Key details** | Everything rated at/above a threshold for a node or the whole board, most important first; *Copy as list* for emails, reports, or an AI prompt. |
+| **Priorities** | *Quick wins*: open work on a PICK chart (importance 6+ and effort 4 or less = quick win; big bets, fill-ins, rethink), plus what still needs rating. *Wins*: every Solved node with the date it was solved — copy the list for an email. *Key details*: messages rated at/above a threshold. |
+| **Private & presenting** | Mark a node **Private** (the lock). **Present** hides private nodes, their links and their chat everywhere on that screen until you stop; exports leave them out unless you tick *Include private nodes*. |
+| **People** | Type `@Kurt` in a title or message. Everyone named gets a chip above the node list; clicking it shows every node and message that mentions them (with or without the @). |
+| **Spelling** | Titles and messages get red squiggles under typos; the bar above a selected node offers the fix, and the node list's *Typos* filter fixes them in one click each. |
 | **Unread** | Nodes, the Chat tab, and the node list show what the other person posted since you last looked. |
 
 Edits sync live: both people can move nodes and chat at the same time; changes merge per node.
@@ -112,6 +116,10 @@ change things in the app. Every note carries `nodenote: generated` in its frontm
 <vault>/<Board>/Inbox.md            unfiled braindumps
 ```
 
+A board keeps its folder when it's renamed, so links you make to its notes keep working. Node
+frontmatter also carries `effort`, `solved` (date) and `private: true`; the board note lists
+quick wins and wins.
+
 Frontmatter makes the notes queryable with Obsidian Bases/Dataview (e.g. every open Issue with
 importance ≥ 7 across boards).
 
@@ -129,10 +137,19 @@ importance ≥ 7 across boards).
 - **Format tests.** `core` has golden samples of today's saved JSON. The build fails if a change
   would stop old boards or messages from loading.
 
+## Exporting the map
+
+*Export → Map as PDF, SVG or PNG.* PDF and SVG are vectors: text and lines stay sharp at any zoom
+and any size. PDF opens on every computer and phone; SVG opens in any browser and imports into
+PowerPoint, Word and Visio. PNG is for pasting into a chat. Private nodes are left out unless you
+include them.
+
 ## Keyboard
 
 | Action | Shortcut |
 |---|---|
+| New child / new sibling of the selected node | `Tab` / `Enter` |
+| Rename the selected node | `F2` (or double-click) |
 | Send message / new line | `Enter` / `Shift+Enter` |
 | Link a node in a message | `[[` then pick |
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
@@ -160,3 +177,4 @@ server/   Ktor + SQLite: REST API, long-poll sync, Obsidian writer, static web a
 - AI summaries: fill each node's **Summary** (and a board digest) from its thread and key details.
 - Photos in chat (shop-floor pictures of parts, setups, faults).
 - Search across all boards.
+- Guest accounts that never receive private nodes (today Private hides them on screen and in exports).

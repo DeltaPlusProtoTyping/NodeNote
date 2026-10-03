@@ -80,6 +80,7 @@ object BuiltinTypes {
         NodeTypeDef("Question", "Question", 0xFF45C4D6, NodeCategory.Work),
         NodeTypeDef("Metric", "KPI", 0xFF3FBFB2, NodeCategory.Work),
         NodeTypeDef("Goal", "Goal", 0xFF7C8CFF, NodeCategory.Work),
+        NodeTypeDef("Project", "Project", 0xFFD97BC8, NodeCategory.Work),
         // Shop floor
         NodeTypeDef("Machine", "Machine", 0xFF5B8DEF, NodeCategory.Shop),
         NodeTypeDef("WorkCell", "Work Cell", 0xFF4CC2A8, NodeCategory.Shop),

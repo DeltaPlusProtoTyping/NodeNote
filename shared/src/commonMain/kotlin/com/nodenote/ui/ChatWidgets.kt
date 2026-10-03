@@ -37,6 +37,7 @@ import com.nodenote.model.MessageKind
 import com.nodenote.model.NodeLinkRegex
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.Project
+import com.nodenote.model.mentionsIn
 import com.nodenote.theme.Accent
 import com.nodenote.theme.PanelBorder
 import com.nodenote.theme.TextFaint
@@ -96,13 +97,45 @@ fun ImportanceBadge(importance: Int, modifier: Modifier = Modifier, size: Dp = 1
     }
 }
 
+/** Effort reads the other way round: 1–3 quick (green), 4–6 a real project (amber), 7–10 a big one (violet). */
+fun effortColor(effort: Int): Color = when (effort) {
+    0 -> TextFaint
+    1, 2, 3 -> Color(0xFF53C27C)
+    4, 5, 6 -> Color(0xFFE5B25B)
+    else -> Color(0xFF9B7BFF)
+}
+
+/** Outlined "E3" tag for a node's effort; nothing for 0. */
+@Composable
+fun EffortBadge(effort: Int, modifier: Modifier = Modifier, height: Dp = 15.dp) {
+    if (effort <= 0) return
+    val color = effortColor(effort)
+    Box(
+        modifier
+            .height(height)
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.dp, color.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("E$effort", style = tightText((height.value * 0.56f).sp, FontWeight.Bold, color))
+    }
+}
+
 /** A row of cells "–, 1 … 10"; clicking the selected value again clears it. */
 @Composable
-fun ImportancePicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) {
+fun ImportancePicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) = ScalePicker(value, onChange, cell, ::importanceColor)
+
+/** The same 1–10 row for effort. */
+@Composable
+fun EffortPicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) = ScalePicker(value, onChange, cell, ::effortColor)
+
+@Composable
+private fun ScalePicker(value: Int, onChange: (Int) -> Unit, cell: Dp, colorFor: (Int) -> Color) {
     Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
         for (n in 0..10) {
             val selected = n == value
-            val color = importanceColor(n)
+            val color = colorFor(n)
             Box(
                 Modifier
                     .size(cell)
@@ -194,6 +227,9 @@ fun formatDay(ms: Long): String {
 
 fun dayKey(ms: Long): Int = local(ms).date.toEpochDays()
 
+/** "Oct 2, 2026" — a date that stays meaningful in a file someone opens later. */
+fun formatDate(ms: Long): String = local(ms).date.let { "${monthNames[it.monthNumber - 1]} ${it.dayOfMonth}, ${it.year}" }
+
 /** "Sep 28 14:03" — compact stamp for lists that mix days. */
 fun formatStamp(ms: Long): String = local(ms).let { "${monthNames[it.monthNumber - 1]} ${it.dayOfMonth} ${two(it.hour)}:${two(it.minute)}" }
 
@@ -201,35 +237,77 @@ fun formatStamp(ms: Long): String = local(ms).let { "${monthNames[it.monthNumber
 
 private val UrlRegex = Regex("""https?://[^\s<>()\[\]]+""")
 
+private enum class TokenKind { Node, Url, Person }
+
+private class Token(val range: IntRange, val kind: TokenKind, val match: MatchResult? = null)
+
+/** Where the @mentions are in [text] (same rules as core's mentionsIn). */
+private fun mentionRanges(text: String): List<IntRange> {
+    val names = mentionsIn(text)
+    if (names.isEmpty()) return emptyList()
+    val out = ArrayList<IntRange>()
+    var from = 0
+    for (name in names) {
+        val at = text.indexOf("@$name", from)
+        if (at < 0) continue
+        out.add(at..(at + name.length))
+        from = at + name.length + 1
+    }
+    return out
+}
+
 /**
  * Message text with `[[Node title]]` links turned into clickable node names
- * (unknown titles stay as typed) and bare URLs made clickable.
+ * (unknown titles stay as typed), bare URLs made clickable, and @people in their
+ * color (clickable when [onPerson] is given). A link to a [hidden] node shows as
+ * "(private)" — its title must not appear while presenting.
  */
-fun linkifyMessage(text: String, project: Project, linkColor: Color, onNode: (String) -> Unit): AnnotatedString {
+fun linkifyMessage(
+    text: String,
+    project: Project,
+    linkColor: Color,
+    hidden: Set<String> = emptySet(),
+    onPerson: ((String) -> Unit)? = null,
+    onNode: (String) -> Unit,
+): AnnotatedString {
     val byTitle = project.nodes.associateBy { it.title.trim().lowercase() }
     val linkStyle = TextLinkStyles(SpanStyle(color = linkColor, fontWeight = FontWeight.Medium))
     return buildAnnotatedString {
         var i = 0
-        val tokens = (NodeLinkRegex.findAll(text).map { it to true } + UrlRegex.findAll(text).map { it to false })
-            .sortedBy { it.first.range.first }
-        for ((match, isNode) in tokens) {
-            if (match.range.first < i) continue // overlapping (a URL inside a [[link]])
-            append(text.substring(i, match.range.first))
-            if (isNode) {
-                val title = match.groupValues[1].trim()
-                val node = byTitle[title.lowercase()]
-                val shown = match.value.substringAfter('|', "").removeSuffix("]]").ifBlank { title }
-                if (node != null) {
-                    withLink(LinkAnnotation.Clickable("node:${node.id}", linkStyle) { onNode(node.id) }) { append(shown) }
-                } else {
-                    withStyle(SpanStyle(color = TextFaint, textDecoration = TextDecoration.LineThrough)) { append(shown) }
+        val tokens = (
+            NodeLinkRegex.findAll(text).map { Token(it.range, TokenKind.Node, it) } +
+                UrlRegex.findAll(text).map { Token(it.range, TokenKind.Url, it) } +
+                mentionRanges(text).map { Token(it, TokenKind.Person) }
+            ).sortedBy { it.range.first }
+        for (token in tokens) {
+            if (token.range.first < i) continue // overlapping (a URL inside a [[link]], …)
+            append(text.substring(i, token.range.first))
+            val value = text.substring(token.range)
+            when (token.kind) {
+                TokenKind.Node -> {
+                    val title = token.match!!.groupValues[1].trim()
+                    val node = byTitle[title.lowercase()]
+                    val shown = value.substringAfter('|', "").removeSuffix("]]").ifBlank { title }
+                    when {
+                        node != null && node.id in hidden -> withStyle(SpanStyle(color = TextFaint)) { append("(private)") }
+                        node != null -> withLink(LinkAnnotation.Clickable("node:${node.id}", linkStyle) { onNode(node.id) }) { append(shown) }
+                        else -> withStyle(SpanStyle(color = TextFaint, textDecoration = TextDecoration.LineThrough)) { append(shown) }
+                    }
                 }
-            } else {
-                withLink(LinkAnnotation.Url(match.value, TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)))) {
-                    append(match.value)
+                TokenKind.Url -> withLink(LinkAnnotation.Url(value, TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)))) {
+                    append(value)
+                }
+                TokenKind.Person -> {
+                    val name = value.removePrefix("@")
+                    val style = SpanStyle(color = authorColor(name), fontWeight = FontWeight.SemiBold)
+                    if (onPerson != null) {
+                        withLink(LinkAnnotation.Clickable("person:$name", TextLinkStyles(style)) { onPerson(name) }) { append(value) }
+                    } else {
+                        withStyle(style) { append(value) }
+                    }
                 }
             }
-            i = match.range.last + 1
+            i = token.range.last + 1
         }
         append(text.substring(i))
     }

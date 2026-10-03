@@ -38,6 +38,16 @@ class SavedFormatTest {
          "elements":[],"customNodeTypes":[],"customEdgeTypes":[]}
     """.trimIndent()
 
+    /** October 2026: effort, private, solvedAt, scale (and keywords) on nodes. */
+    private val boardV3 = """
+        {"id":"b1","name":"Shop floor","nodes":[
+          {"id":"n1","type":"Improvement","title":"Decrease QC time on first part checks","description":"","x":10.0,"y":20.0,
+           "width":285.0,"height":138.0,"properties":{},"attachments":[],"status":"Solved","importance":8,"owner":"",
+           "summary":"","createdAt":1790000000000,"createdBy":"Ben","keywords":"QC, first part","effort":3,
+           "private":true,"solvedAt":1791000000000,"scale":1.5}],
+         "edges":[],"elements":[],"customNodeTypes":[],"customEdgeTypes":[]}
+    """.trimIndent()
+
     private val messageV2 = """
         {"id":"m1","boardId":"b1","nodeId":"n1","author":"Nick","text":"see [[Spindle warm-up]]","kind":"Decision",
          "importance":9,"linkedNodeIds":["n1"],"done":false,"createdAt":1790000000000,"editedAt":0,"deleted":false,"seq":42}
@@ -52,6 +62,28 @@ class SavedFormatTest {
         assertEquals("Nick", n.owner)
         assertEquals("Try scheduled warm-up", n.summary)
         assertEquals("Robot", p.customNodeTypes.single().label)
+    }
+
+    @Test
+    fun boardsFromBeforeEffortAndPrivateGetDefaults() {
+        val n = ApiJson.decodeFromString(Project.serializer(), boardV2).nodes.single()
+        assertEquals(0, n.effort)
+        assertEquals(false, n.isPrivate)
+        assertEquals(0L, n.solvedAt)
+        assertEquals(1f, n.scale)
+    }
+
+    @Test
+    fun boardsWithEffortPrivateAndScaleLoad() {
+        val n = ApiJson.decodeFromString(Project.serializer(), boardV3).nodes.single()
+        assertEquals(3, n.effort)
+        assertEquals(true, n.isPrivate)
+        assertEquals(1791000000000L, n.solvedAt)
+        assertEquals(1.5f, n.scale)
+        assertEquals("QC, first part", n.keywords)
+        // The flag is stored as "private" (the Kotlin name can't be).
+        val encoded = ApiJson.encodeToString(Node.serializer(), n)
+        assertEquals(true, "\"private\":true" in encoded, encoded)
     }
 
     @Test

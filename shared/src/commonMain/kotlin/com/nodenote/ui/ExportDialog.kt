@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nodenote.model.ExportFormat
 import com.nodenote.model.ExportRegion
 import com.nodenote.model.ExportSettings
 import com.nodenote.model.ExportTheme
@@ -80,12 +81,12 @@ fun ExportDialog(state: AppState) {
     val textMeasurer = rememberTextMeasurer()
     val settings = state.exportSettings
 
-    // Preview always renders at 1x; the scale setting only affects the file.
+    // Preview always renders at screen resolution; the format and PNG scale only affect the file.
     val preview = remember(
         settings, state.project, state.canvasSize, state.pan, state.zoom,
         state.selectedNodeIds, state.viewDensity,
     ) {
-        PngExporter.render(state, settings.copy(scale = 1f), textMeasurer)
+        MapExporter.render(state, settings, textMeasurer, pixelsPerUnit = state.viewDensity)
     }
 
     Box(
@@ -106,7 +107,7 @@ fun ExportDialog(state: AppState) {
         ) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Export PNG", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("Export the map", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                     Spacer(Modifier.width(12.dp))
                     Text(
                         "drag the legend / title block on the preview to place them",
@@ -126,18 +127,20 @@ fun ExportDialog(state: AppState) {
 
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val sizeText = if (preview == null) {
-                        "No content for this region"
-                    } else {
-                        "Output: ${(preview.bitmap.width * settings.scale).roundToInt()} × " +
-                            "${(preview.bitmap.height * settings.scale).roundToInt()} px"
-                    }
+                    val sizeText = when {
+                        preview == null -> "No content for this region"
+                        settings.format == ExportFormat.Png ->
+                            "Output: ${(preview.bitmap.width * settings.scale).roundToInt()} × " +
+                                "${(preview.bitmap.height * settings.scale).roundToInt()} px"
+                        settings.format == ExportFormat.Pdf -> "Vector PDF: sharp at any zoom, opens on any computer or phone"
+                        else -> "Vector SVG: sharp at any zoom, opens in any web browser"
+                    } + if (!settings.includePrivate && state.project.nodes.any { it.isPrivate }) " · private nodes left out" else ""
                     Text(sizeText, fontSize = 11.sp, color = TextFaint)
                     Spacer(Modifier.weight(1f))
                     ToolbarButton("Cancel", onClick = { state.closeExportDialog() }, color = TextSecondary)
                     Spacer(Modifier.width(4.dp))
                     ToolbarButton(
-                        "Copy to clipboard",
+                        "Copy as picture",
                         onClick = { copyToClipboard(state, textMeasurer) },
                         enabled = preview != null,
                         color = TextPrimary,
@@ -148,7 +151,7 @@ fun ExportDialog(state: AppState) {
                         shape = RoundedCornerShape(6.dp),
                         modifier = Modifier.height(32.dp),
                     ) {
-                        Text("Export PNG", fontSize = 12.sp)
+                        Text("Export ${settings.format.label}", fontSize = 12.sp)
                     }
                 }
             }
@@ -157,20 +160,17 @@ fun ExportDialog(state: AppState) {
 }
 
 private fun performExport(state: AppState, textMeasurer: androidx.compose.ui.text.TextMeasurer) {
-    val render = PngExporter.render(state, state.exportSettings, textMeasurer)
-    if (render == null) {
+    val settings = state.exportSettings
+    val bytes = MapExporter.fileBytes(state, settings, textMeasurer)
+    if (bytes == null) {
         state.status = "Nothing to export for this region"
         return
     }
-    val bytes = encodeToPng(render.bitmap)
-    if (bytes == null) {
-        state.status = "PNG encoding failed"
-        return
-    }
     val fileName = state.project.name
-        .replace(Regex("[^A-Za-z0-9 _-]"), "")
+        .replace(Regex("[^A-Za-z0-9 _-]"), " ")
+        .replace(Regex(" +"), " ")
         .trim()
-        .ifBlank { "export" } + ".png"
+        .ifBlank { "board" } + "." + settings.format.extension
     ProjectStorage.saveFile(fileName, bytes) { path ->
         if (path != null) {
             state.status = "Exported $path"
@@ -183,7 +183,7 @@ private fun performExport(state: AppState, textMeasurer: androidx.compose.ui.tex
 
 /** Renders the image at the chosen settings and puts it on the OS clipboard for pasting into chat/email/docs. */
 private fun copyToClipboard(state: AppState, textMeasurer: androidx.compose.ui.text.TextMeasurer) {
-    val render = PngExporter.render(state, state.exportSettings, textMeasurer)
+    val render = MapExporter.render(state, state.exportSettings, textMeasurer)
     if (render == null) {
         state.status = "Nothing to copy for this region"
         return
@@ -322,7 +322,22 @@ private fun OptionsPane(state: AppState, modifier: Modifier = Modifier) {
         modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        PresetSection(state)
+        PanelCaption("Format")
+        OptionChips(
+            options = ExportFormat.entries.map { it.label },
+            selected = s.format.ordinal,
+            onSelect = { update { st -> st.copy(format = ExportFormat.entries[it]) } },
+        )
+        Text(
+            when (s.format) {
+                ExportFormat.Pdf -> "Best for sharing and printing: vector, opens everywhere."
+                ExportFormat.Svg -> "Vector for browsers, PowerPoint, Word or Visio."
+                ExportFormat.Png -> "A picture, for pasting into chats and documents."
+            },
+            fontSize = 10.sp,
+            color = TextFaint,
+        )
+        ToggleRow("Include private nodes", s.includePrivate) { update { st -> st.copy(includePrivate = it) } }
         HorizontalDivider(color = PanelBorder)
 
         PanelCaption("Region")
@@ -338,12 +353,14 @@ private fun OptionsPane(state: AppState, modifier: Modifier = Modifier) {
             }
         }
 
-        PanelCaption("Resolution")
-        OptionChips(
-            options = listOf("1×", "2×", "3×"),
-            selected = (s.scale.roundToInt() - 1).coerceIn(0, 2),
-            onSelect = { update { st -> st.copy(scale = (it + 1).toFloat()) } },
-        )
+        if (s.format == ExportFormat.Png) {
+            PanelCaption("Resolution")
+            OptionChips(
+                options = listOf("1×", "2×", "3×", "4×"),
+                selected = (s.scale.roundToInt() - 1).coerceIn(0, 3),
+                onSelect = { update { st -> st.copy(scale = (it + 1).toFloat()) } },
+            )
+        }
 
         PanelCaption("Appearance")
         OptionChips(
@@ -356,9 +373,6 @@ private fun OptionsPane(state: AppState, modifier: Modifier = Modifier) {
             selected = if (s.transparentBackground) 0 else 1,
             onSelect = { update { st -> st.copy(transparentBackground = it == 0) } },
         )
-        ToggleRow("Dot grid (solid background only)", s.showGrid, enabled = !s.transparentBackground) {
-            update { st -> st.copy(showGrid = it) }
-        }
 
         PanelCaption("Legend")
         ToggleRow("Show legend (drag it on the preview)", s.showLegend) { update { st -> st.copy(showLegend = it) } }
@@ -376,18 +390,14 @@ private fun OptionsPane(state: AppState, modifier: Modifier = Modifier) {
         }
 
         PanelCaption("Content")
-        FieldLabel("Project name (shown in the title block)")
-        CompactTextField(
-            value = state.project.name,
-            onValueChange = state::renameProject,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = "Project name",
-        )
-        ToggleRow("Project title block (drag it on the preview)", s.showTitleBlock) {
+        ToggleRow("Board name and date (drag it on the preview)", s.showTitleBlock) {
             update { st -> st.copy(showTitleBlock = it) }
         }
         ToggleRow("Connection labels", s.showEdgeLabels) { update { st -> st.copy(showEdgeLabels = it) } }
         ToggleRow("Node descriptions", s.showDescriptions) { update { st -> st.copy(showDescriptions = it) } }
+
+        HorizontalDivider(color = PanelBorder)
+        PresetSection(state)
     }
 }
 
