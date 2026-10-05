@@ -5,6 +5,7 @@ import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.defaultForFilePath
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationStopped
@@ -12,6 +13,7 @@ import io.ktor.server.application.ApplicationStopping
 import io.ktor.server.application.install
 import io.ktor.server.engine.defaultExceptionStatusCode
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.http.content.CompressedFileType
 import io.ktor.server.http.content.staticFiles
 import io.ktor.server.http.content.staticResources
 import io.ktor.server.netty.Netty
@@ -201,26 +203,39 @@ private val LocalOrigin = Regex("""http://(localhost|127\.0\.0\.1)(:\d+)?""")
  * from the copy bundled into the jar by `-PwithWeb`. Ktor already maps `.wasm` to
  * application/wasm (required for streaming compilation); set it explicitly anyway,
  * along with `.mjs`, which Ktor doesn't know.
+ *
+ * The bundled copy comes with brotli and gzip versions of each big file (see
+ * tools/prepare-web.mjs), sent as they are to browsers that accept them: the first
+ * visit on a phone downloads about a quarter less, and nothing is compressed per request.
  */
 private fun io.ktor.server.routing.Route.serveWebApp(config: ServerConfig) {
-    fun typeOf(fileName: String): ContentType? = when (fileName.substringAfterLast('.', "").lowercase()) {
-        "wasm" -> ContentType.Application.Wasm
-        "mjs" -> ContentType.Application.JavaScript
-        else -> null
+    // Always from the original's name: "index.html.br" must still be text/html.
+    fun typeOf(fileName: String): ContentType {
+        val name = uncompressed(fileName)
+        return when (name.substringAfterLast('.', "").lowercase()) {
+            "wasm" -> ContentType.Application.Wasm
+            "mjs" -> ContentType.Application.JavaScript
+            else -> ContentType.defaultForFilePath(name)
+        }
     }
     val dir = config.webDir
     if (dir != null) {
         staticFiles("/", dir.toFile()) {
+            preCompressed(CompressedFileType.BROTLI, CompressedFileType.GZIP)
             contentType { typeOf(it.name) }
             cacheControl { cachingFor(it.path) }
         }
     } else if (bundledWebApp()) {
         staticResources("/", "web") {
+            preCompressed(CompressedFileType.BROTLI, CompressedFileType.GZIP)
             contentType { typeOf(it.path) }
             cacheControl { cachingFor(it.path) }
         }
     }
 }
+
+/** "x.wasm.br" -> "x.wasm": a precompressed copy has its original's type and caching. */
+private fun uncompressed(path: String): String = path.removeSuffix(".br").removeSuffix(".gz")
 
 /**
  * Webpack names the .wasm files by content hash, so a phone can keep them for a
@@ -229,7 +244,7 @@ private fun io.ktor.server.routing.Route.serveWebApp(config: ServerConfig) {
  * (cheap 304s via ConditionalHeaders) and an update shows up on the next load.
  */
 private fun cachingFor(path: String): List<CacheControl> =
-    if (Regex("""[0-9a-f]{16,}\.wasm$""").containsMatchIn(path)) {
+    if (Regex("""[0-9a-f]{16,}\.wasm$""").containsMatchIn(uncompressed(path))) {
         listOf(CacheControl.MaxAge(maxAgeSeconds = 365 * 24 * 3600, visibility = CacheControl.Visibility.Public))
     } else {
         listOf(CacheControl.NoCache(null))

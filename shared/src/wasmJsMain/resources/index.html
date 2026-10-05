@@ -13,12 +13,17 @@
     </script>
     <style>
         html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #15171B; }
-        #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-                   font: 14px system-ui, sans-serif; color: #9AA3AF; }
+        #loading { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center;
+                   justify-content: center; font: 14px system-ui, sans-serif; color: #9AA3AF; }
+        /* Keeps moving while the app downloads, so a slow first visit doesn't look stuck. */
+        #loading .bar { width: 160px; height: 3px; border-radius: 2px; background: #2A2E35; overflow: hidden; }
+        #loading .bar::after { content: ""; display: block; width: 40%; height: 100%; background: #5B9CFF;
+                               animation: loading-slide 1.2s ease-in-out infinite; }
+        @keyframes loading-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
     </style>
 </head>
 <body>
-<div id="loading">Loading NodeNote…</div>
+<div id="loading">Loading NodeNote…<div class="bar"></div></div>
 <script src="app.js"></script>
 </body>
 </html>

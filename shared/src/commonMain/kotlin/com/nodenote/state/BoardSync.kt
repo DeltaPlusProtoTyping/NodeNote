@@ -11,6 +11,8 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
@@ -78,8 +80,12 @@ class BoardSync(private val state: AppState, private val session: Session, val b
         var attempt = 0
         while (true) {
             try {
-                val snapshot = session.api.board(boardId)
-                val messages = session.api.messages(boardId, since = 0)
+                // Both at once: on a phone each request is a slow round trip.
+                val (snapshot, messages) = coroutineScope {
+                    val board = async { session.api.board(boardId) }
+                    val chat = async { session.api.messages(boardId, since = 0) }
+                    board.await() to chat.await()
+                }
                 mutex.withLock {
                     baseRev = snapshot.rev
                     msgSeq = messages.maxOfOrNull { it.seq } ?: 0L

@@ -57,7 +57,10 @@ Requirements: **JDK 17+** (the Gradle wrapper fetches everything else).
 | `--web` | `NODENOTE_WEB` | `shared/build/dist/wasmJs/productionExecutable` if built |
 
 For a self-contained install: `./gradlew :server:installDist -PwithWeb` →
-`server/build/install/server/bin/server(.bat)`.
+`server/build/install/server/bin/server(.bat)`. On the way into the jar, `tools/prepare-web.mjs`
+(run with the Node.js the Kotlin/Wasm build already downloaded) adds brotli/gzip copies of the
+app and preload hints for its `.wasm` files, so a phone's first visit downloads about a quarter less
+and starts on the big files at once.
 
 ### 2. Share it over Tailscale
 

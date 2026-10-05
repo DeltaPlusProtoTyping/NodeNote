@@ -56,12 +56,35 @@ tasks.test {
 
 // Opt-in (-PwithWeb): bundle the browser app into the jar under web/ so installDist /
 // distZip ship a server that needs nothing else. Off by default because the wasm
-// production build is slow and plain server work doesn't need it.
+// production build is slow and plain server work doesn't need it. On the way in,
+// tools/prepare-web.mjs adds brotli/gzip copies and wasm preload hints (faster first load).
 if (providers.gradleProperty("withWeb").isPresent) {
-    tasks.named<ProcessResources>("processResources") {
+    val webDist = rootProject.layout.projectDirectory.dir("shared/build/dist/wasmJs/productionExecutable")
+    val preparedWeb = layout.buildDirectory.dir("web")
+    val prepareWeb = tasks.register<Exec>("prepareWeb") {
+        description = "Brotli/gzip copies of the browser app plus wasm preload hints, for the jar."
         dependsOn(":shared:wasmJsBrowserDistribution")
-        from(rootProject.layout.projectDirectory.dir("shared/build/dist/wasmJs/productionExecutable")) {
+        val script = rootProject.file("tools/prepare-web.mjs")
+        inputs.dir(webDist)
+        inputs.file(script)
+        outputs.dir(preparedWeb)
+        executable = nodeExecutable()
+        args(script.absolutePath, webDist.asFile.absolutePath, preparedWeb.get().asFile.absolutePath)
+    }
+    tasks.named<ProcessResources>("processResources") {
+        dependsOn(prepareWeb)
+        from(preparedWeb) {
             into("web")
         }
     }
+}
+
+/** The Node.js the Kotlin/Wasm build downloaded (~/.gradle/nodejs), else `node` from the PATH. */
+fun nodeExecutable(): String {
+    val windows = System.getProperty("os.name").lowercase().contains("windows")
+    val dir = File(System.getProperty("user.home"), ".gradle/nodejs").listFiles()
+        ?.filter { it.isDirectory && it.name.startsWith("node-v") }
+        ?.maxByOrNull { it.name }
+    val exe = dir?.let { File(it, if (windows) "node.exe" else "bin/node") }
+    return exe?.takeIf { it.isFile }?.absolutePath ?: "node"
 }

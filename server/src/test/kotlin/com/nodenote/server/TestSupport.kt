@@ -64,10 +64,11 @@ class ServerFixture(
 fun serverTest(
     vaultDebounceMillis: Long = 60_000,
     root: Path? = null,
+    webDir: Path? = null,
     block: suspend ServerFixture.(ApplicationTestBuilder) -> Unit,
 ) {
     val dir = root ?: Files.createTempDirectory("nodenote-server-test")
-    val config = ServerConfig(port = 0, dataDir = dir.resolve("data"), vaultDir = dir.resolve("vault"))
+    val config = ServerConfig(port = 0, dataDir = dir.resolve("data"), vaultDir = dir.resolve("vault"), webDir = webDir)
     Database(config.databaseFile).use { db ->
         val accounts = Accounts(db)
         for (name in listOf(TEST_USER, "Nick")) if (name !in accounts.users()) accounts.addUser(name, TEST_PASSWORD)

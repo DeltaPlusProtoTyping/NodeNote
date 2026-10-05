@@ -14,6 +14,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class ConnectionState(val label: String) {
@@ -63,12 +64,17 @@ class Session {
         private set
     private var spellLoading = false
 
-    /** Fetches the word list once, in the background. Without it there's simply no spell check. */
+    /**
+     * Fetches the word list once, in the background. Without it there's simply no spell check.
+     * Waits a few seconds first, so it doesn't compete with the boards opening (a phone's
+     * first visit is slow enough already).
+     */
     fun loadSpellChecker() {
         if (spellChecker != null || spellLoading || !signedIn) return
         spellLoading = true
         scope.launch {
             try {
+                delay(3_000)
                 spellChecker = SpellChecker(api.dictionary())
             } catch (e: CancellationException) {
                 throw e

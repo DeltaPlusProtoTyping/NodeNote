@@ -23,6 +23,8 @@ JAVA_HOME/JDK 17).
 - Server: `gradlew :server:run --args="--port 8870 --vault <dir>"` (serves the web app from
   `shared/build/dist/wasmJs/productionExecutable` if built). Tests: `gradlew :server:test`.
 - Web app: `gradlew :shared:wasmJsBrowserDistribution` (slow — production webpack + binaryen).
+  `-PwithWeb` bundles it via `tools/prepare-web.mjs` (Node from `~/.gradle/nodejs`): `.br`/`.gz`
+  copies served by `preCompressed` in `Main.kt`, plus wasm preload hints in index.html.
 - Desktop: `gradlew :shared:run`. MSI: `gradlew :shared:packageMsi`.
 - Test with scratch `--data`/`--vault` dirs, never the real `~/.nodenote-server` or vault.
 
