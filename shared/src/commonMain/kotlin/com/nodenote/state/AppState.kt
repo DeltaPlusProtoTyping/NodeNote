@@ -687,8 +687,11 @@ class AppState(val session: Session) {
     fun addNodeAt(world: Offset, typeId: String = lastNodeType) {
         pushUndo()
         val node = placeNodeOfType(world, typeId, title = "")
-        beginFreshTitle(node.id, parentId = null)
+        beginFreshTitle(node.id, parentId = null, continuation = false)
     }
+
+    /** What a card is called until someone names it ("New Issue"). */
+    private fun defaultTitle(typeId: String): String = "New ${nodeTypeOf(typeId).label}"
 
     /** Shared body that creates a node without its own undo step (callers push first). */
     private fun placeNodeOfType(world: Offset, typeId: String, title: String? = null): Node {
@@ -698,7 +701,7 @@ class AppState(val session: Session) {
         val node = Node(
             id = newId(),
             type = typeId,
-            title = title ?: "New ${def.label}",
+            title = title ?: defaultTitle(typeId),
             x = world.x - Node.DEFAULT_WIDTH / 2f,
             y = world.y - Node.DEFAULT_HEIGHT / 2f,
             // Issues, improvements and action items start out as open work.
@@ -716,22 +719,23 @@ class AppState(val session: Session) {
      * Mind-map style adding (Tab on a selected node): a new node connected to [parentId],
      * placed beside it on the side facing away from the goal, ready to type. Its type follows
      * the parent's other children (siblings are usually alike), else the last type used.
+     * [continuation]: lined up by finishing the title before it (see [finishTitleEdit]).
      */
-    fun addChildNode(parentId: String, typeId: String? = null) {
+    fun addChildNode(parentId: String, typeId: String? = null, continuation: Boolean = false) {
         val parent = project.nodes.find { it.id == parentId } ?: return
         if (parentId in hiddenNodeIds) return
         pushUndo()
         val node = placeNodeOfType(freeSpotBeside(parent), typeId ?: childTypeFor(parent), title = "")
         // Children point at their parent, like the rest of the map.
         project = project.copy(edges = project.edges + Edge(newId(), node.id, parent.id))
-        beginFreshTitle(node.id, parentId)
+        beginFreshTitle(node.id, parentId, continuation)
     }
 
     /** Enter on a selected node: another child of its parent, of the same type. The root (the goal) gets a child instead. */
-    fun addSiblingNode(nodeId: String) {
+    fun addSiblingNode(nodeId: String, continuation: Boolean = false) {
         val node = project.nodes.find { it.id == nodeId } ?: return
         val parent = parentOf(nodeId)
-        if (parent == null) addChildNode(nodeId) else addChildNode(parent.id, node.type)
+        if (parent == null) addChildNode(nodeId, continuation = continuation) else addChildNode(parent.id, node.type, continuation)
     }
 
     private fun childTypeFor(parent: Node): String {
@@ -740,16 +744,22 @@ class AppState(val session: Session) {
         return common ?: lastNodeType.takeIf { it != "Goal" } ?: BuiltinTypes.DEFAULT_NODE
     }
 
-    /** A node created a moment ago whose title is being typed. Enter then adds the next sibling; left empty, it goes away again. */
+    /**
+     * A node created a moment ago whose title is being typed. Enter then adds the next sibling.
+     * Left empty it stays, under its type's name — unless it is only the next one Enter/Tab
+     * lined up while typing out a branch, or it was dropped with Escape.
+     */
     var freshNodeId by mutableStateOf<String?>(null)
         private set
     private var freshParentId: String? = null
     private var freshUndoDepth = -1
+    private var freshIsContinuation = false
 
-    private fun beginFreshTitle(nodeId: String, parentId: String?) {
+    private fun beginFreshTitle(nodeId: String, parentId: String?, continuation: Boolean) {
         freshNodeId = nodeId
         freshParentId = parentId
         freshUndoDepth = undoStack.size
+        freshIsContinuation = continuation
         editingNodeId = nodeId
     }
 
@@ -765,28 +775,42 @@ class AppState(val session: Session) {
     enum class TitleEditEnd { Enter, Tab, ShiftTab, Escape, Blur }
 
     /**
-     * The inline title editor closed. A new node left empty disappears as if never added.
-     * After typing a new child, Enter adds the next sibling and Tab a child of it, so a whole
-     * branch can be typed out without the mouse; Shift+Tab steps back out a level. Escape on
-     * an existing node restores the title it had.
+     * The inline title editor closed. A new node left empty stays, called "New <type>", when
+     * the user clicks away or presses Enter; Escape drops it as if never added. After typing a
+     * new child, Enter adds the next sibling and Tab a child of it, so a whole branch can be
+     * typed out without the mouse; Shift+Tab steps back out a level. Those lined-up nodes go
+     * away again if left empty, so ending a branch leaves no blank card. Escape on an existing
+     * node restores the title it had.
      */
     fun endTitleEdit(nodeId: String, end: TitleEditEnd, originalTitle: String) {
         if (editingNodeId != nodeId) return
         val fresh = freshNodeId == nodeId
         val parentId = freshParentId
+        val continuation = freshIsContinuation
         editingNodeId = null
         freshNodeId = null
-        finishTitleEdit(nodeId, end, originalTitle, fresh, parentId)
+        finishTitleEdit(nodeId, end, originalTitle, fresh, parentId, continuation)
         // Unless another title is being typed now, keys go back to the canvas (Tab, Enter, Delete…).
         if (editingNodeId == null) canvasFocusRequests++
     }
 
-    private fun finishTitleEdit(nodeId: String, end: TitleEditEnd, originalTitle: String, fresh: Boolean, parentId: String?) {
+    private fun finishTitleEdit(
+        nodeId: String,
+        end: TitleEditEnd,
+        originalTitle: String,
+        fresh: Boolean,
+        parentId: String?,
+        continuation: Boolean,
+    ) {
         val node = project.nodes.find { it.id == nodeId } ?: return
         val title = node.title.trim()
         if (fresh && title.isEmpty()) {
-            if (end == TitleEditEnd.Tab) beginFreshTitle(nodeId, parentId) // nothing to hang a child on yet
-            else discardFreshNode(nodeId, parentId)
+            when {
+                end == TitleEditEnd.Tab -> beginFreshTitle(nodeId, parentId, continuation) // nothing to hang a child on yet
+                end == TitleEditEnd.Escape || continuation -> discardFreshNode(nodeId, parentId)
+                // A card the user asked for is kept; renaming it later starts with this name selected.
+                else -> updateNode(nodeId) { it.copy(title = defaultTitle(it.type)) }
+            }
             return
         }
         if (end == TitleEditEnd.Escape && !fresh) {
@@ -795,9 +819,9 @@ class AppState(val session: Session) {
         }
         if (title != node.title) updateNode(nodeId) { it.copy(title = title) }
         when (end) {
-            TitleEditEnd.Enter -> if (fresh && parentId != null) addChildNode(parentId, node.type)
-            TitleEditEnd.Tab -> addChildNode(nodeId)
-            TitleEditEnd.ShiftTab -> parentOf(nodeId)?.let { addSiblingNode(it.id) }
+            TitleEditEnd.Enter -> if (fresh && parentId != null) addChildNode(parentId, node.type, continuation = true)
+            TitleEditEnd.Tab -> addChildNode(nodeId, continuation = true)
+            TitleEditEnd.ShiftTab -> parentOf(nodeId)?.let { addSiblingNode(it.id, continuation = true) }
             else -> Unit
         }
     }
@@ -818,9 +842,12 @@ class AppState(val session: Session) {
         status = "Ready"
     }
 
-    /** Sets a node's type and records it as recently used. */
+    /** Sets a node's type and records it as recently used. A card still called "New Issue" is renamed with it. */
     fun setNodeType(nodeId: String, typeId: String) {
-        updateNode(nodeId) { it.copy(type = typeId) }
+        updateNode(nodeId) {
+            val title = if (it.title == defaultTitle(it.type)) defaultTitle(typeId) else it.title
+            it.copy(type = typeId, title = title)
+        }
         noteRecentNodeType(typeId)
         lastNodeType = typeId
     }

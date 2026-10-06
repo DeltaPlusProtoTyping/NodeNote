@@ -379,7 +379,8 @@ private fun BoxScope.ResizeGrip(state: AppState, node: Node) {
  * F2, or right after adding a node). Edits write straight into the project.
  * Enter finishes — after adding a child it also starts the next sibling; Tab
  * finishes and adds a child; Shift+Tab steps back out a level; Escape restores the
- * old title (or drops a node that was never named). See [AppState.endTitleEdit].
+ * old title (or drops a node that was never named). Clicking away keeps a new node.
+ * See [AppState.endTitleEdit].
  */
 @Composable
 private fun InlineTitleEditor(state: AppState, node: Node, typeLabel: String) {
