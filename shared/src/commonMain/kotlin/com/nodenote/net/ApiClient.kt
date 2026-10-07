@@ -65,6 +65,10 @@ class ApiClient(serverUrl: String) {
     suspend fun login(username: String, password: String): LoginResponse =
         http.post("$baseUrl/api/auth/login") { json(LoginRequest(username, password)) }.body()
 
+    /** A fresh server's first account (refused once any account exists). */
+    suspend fun setup(username: String, password: String): LoginResponse =
+        http.post("$baseUrl/api/auth/setup") { json(LoginRequest(username, password)) }.body()
+
     suspend fun logout() {
         http.post("$baseUrl/api/auth/logout")
     }

@@ -68,8 +68,9 @@ if (providers.gradleProperty("withWeb").isPresent) {
         inputs.dir(webDist)
         inputs.file(script)
         outputs.dir(preparedWeb)
-        executable = nodeExecutable()
         args(script.absolutePath, webDist.asFile.absolutePath, preparedWeb.get().asFile.absolutePath)
+        // Looked up when it runs: on a fresh machine the wasm build has only just downloaded Node.
+        doFirst { executable = nodeExecutable() }
     }
     tasks.named<ProcessResources>("processResources") {
         dependsOn(prepareWeb)

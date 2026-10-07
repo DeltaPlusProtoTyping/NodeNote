@@ -107,11 +107,36 @@ class Session {
 
     // ---- sign-in ----
 
+    /**
+     * Asks the server about itself for the sign-in screen (is it a fresh install with no
+     * accounts yet?). Retries for a while: the desktop app's own server may still be starting.
+     */
+    suspend fun checkServer() {
+        repeat(20) {
+            try {
+                noteServerInfo(api.info())
+                markOnline()
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                markOffline(e)
+                delay(1_500)
+            }
+        }
+    }
+
     /** Signs in; returns null on success or a message to show. */
-    suspend fun signIn(username: String, password: String): String? = try {
-        val result = api.login(username.trim(), password)
+    suspend fun signIn(username: String, password: String): String? = account { api.login(username.trim(), password) }
+
+    /** Creates a fresh server's first account and signs in with it; null on success, else a message to show. */
+    suspend fun setUp(username: String, password: String): String? = account { api.setup(username.trim(), password) }
+
+    private suspend fun account(call: suspend () -> com.nodenote.api.LoginResponse): String? = try {
+        val result = call()
         applyAccount(result.username, result.token)
         signInNotice = null
+        serverInfo = serverInfo?.copy(needsSetup = false)
         markOnline()
         null
     } catch (e: CancellationException) {

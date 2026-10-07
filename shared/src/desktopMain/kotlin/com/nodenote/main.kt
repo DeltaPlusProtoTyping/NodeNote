@@ -10,11 +10,22 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.nodenote.state.Session
 import com.nodenote.state.Workspace
+import com.nodenote.storage.ClientPrefs
+import com.nodenote.storage.defaultServerUrl
 import com.nodenote.theme.ThemeState
 import com.nodenote.ui.handleShortcut
 
-/** Windows/desktop entry point. Run with: gradlew :shared:run (the server runs separately: gradlew :server:run). */
-fun main() = application {
+/**
+ * Windows/desktop entry point. Run with: gradlew :shared:run. Unless a server is already
+ * running on this computer (or another one is set in Settings), the app starts its own
+ * built-in server first, so an install works by itself — see [LocalServer].
+ */
+fun main() {
+    LocalServer.startIfNeeded(ClientPrefs.serverUrl.ifBlank { defaultServerUrl() })
+    desktopApp()
+}
+
+private fun desktopApp() = application {
     // Restore the saved appearance theme once, before the window content composes.
     remember { ThemeState.load() }
     val session = remember { Session() }

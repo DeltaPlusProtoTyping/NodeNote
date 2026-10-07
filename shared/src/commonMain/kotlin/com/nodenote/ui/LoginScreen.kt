@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,25 +56,40 @@ import com.nodenote.theme.TextPrimary
 import com.nodenote.theme.TextSecondary
 import kotlinx.coroutines.launch
 
-/** Full-window sign-in. Desktop can also change the server address here (the browser always uses its own). */
+/**
+ * Full-window sign-in. Desktop can also change the server address here (the browser always
+ * uses its own). A fresh server with no accounts yet (a new install) gets "create your
+ * account" instead, which makes the first account and signs straight in.
+ */
 @Composable
 fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     var username by remember { mutableStateOf(session.userName) }
     var password by remember { mutableStateOf("") }
+    var repeat by remember { mutableStateOf("") }
     var server by remember { mutableStateOf(session.serverUrl) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Fresh install? Asked again whenever the server address changes.
+    LaunchedEffect(session.api) { session.checkServer() }
+    val setup = session.serverInfo?.needsSetup == true
 
     fun submit() {
         if (busy || username.isBlank() || password.isEmpty()) return
+        if (setup && password != repeat) {
+            error = "The two passwords don't match"
+            return
+        }
         if (!isWebPlatform && server.trim().trimEnd('/') != session.serverUrl) session.updateServerUrl(server)
         busy = true
         error = null
         scope.launch {
-            error = session.signIn(username, password)
+            error = if (setup) session.setUp(username, password) else session.signIn(username, password)
             busy = false
-            if (error != null) password = ""
+            if (error != null) {
+                password = ""
+                repeat = ""
+            }
         }
     }
 
@@ -93,14 +109,27 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
                 Spacer(Modifier.width(10.dp))
                 Text("NodeNote", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
-            Text("Sign in to your boards", fontSize = 13.sp, color = TextSecondary)
+            if (setup) {
+                Text("Welcome! This NodeNote has no accounts yet: create yours.", fontSize = 13.sp, color = TextSecondary)
+                Text(
+                    "Your boards are kept on this server. You'll sign in with this name and password from other devices too.",
+                    fontSize = 11.sp,
+                    color = TextFaint,
+                )
+            } else {
+                Text("Sign in to your boards", fontSize = 13.sp, color = TextSecondary)
+            }
             session.signInNotice?.let { Text(it, fontSize = 12.sp, color = TextSecondary) }
             Spacer(Modifier.height(4.dp))
 
-            FieldLabel("Username")
+            FieldLabel(if (setup) "Your name" else "Username")
             LoginField(username, { username = it }, onEnter = ::submit)
-            FieldLabel("Password")
+            FieldLabel(if (setup) "Password (8+ characters)" else "Password")
             LoginField(password, { password = it }, onEnter = ::submit, secret = true)
+            if (setup) {
+                FieldLabel("Password again")
+                LoginField(repeat, { repeat = it }, onEnter = ::submit, secret = true)
+            }
             if (!isWebPlatform) {
                 FieldLabel("Server")
                 LoginField(server, { server = it }, onEnter = ::submit)
@@ -113,9 +142,17 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier.fillMaxWidth().height(36.dp),
             ) {
-                Text(if (busy) "Signing in…" else "Sign in", fontSize = 13.sp)
+                Text(
+                    when {
+                        setup && busy -> "Creating…"
+                        setup -> "Create account"
+                        busy -> "Signing in…"
+                        else -> "Sign in"
+                    },
+                    fontSize = 13.sp,
+                )
             }
-            Text("Forgot your password? Ask Ben to reset it.", fontSize = 11.sp, color = TextFaint)
+            if (!setup) Text("Forgot your password? Whoever runs this server can reset it.", fontSize = 11.sp, color = TextFaint)
         }
     }
 }

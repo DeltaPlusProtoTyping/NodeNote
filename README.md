@@ -37,6 +37,25 @@ server you host on your own PC and reach over **Tailscale**.
 Edits sync live: both people can move nodes and chat at the same time; changes merge per node.
 Undo/redo still works locally.
 
+## Install
+
+Download the installer for your computer from this repository's **Releases** page (Windows
+`.msi`, macOS `.dmg`, Linux `.deb`) and run it. NodeNote then runs entirely on that computer:
+
+- the app starts its own server when it opens and stops it when it closes; it only listens on
+  this computer, so nothing is shared unless you choose to (see *Share it over Tailscale*);
+- your boards live in `~/.nodenote-server` (backed up on every start and daily), mirrored as
+  Markdown into `~/Documents/NodeNote Vault`;
+- the first time, it asks you to create your account (the first account on a new server is made
+  right on the sign-in screen; everyone after that is added in Settings).
+
+If a NodeNote server is already running on the computer (port 8870), the app simply uses it, and
+the **Server** field on the sign-in screen points the app at someone else's server instead.
+
+For an always-on server without the app (a PC that serves the whole team), take
+`NodeNote-Server-<version>.zip` from the same release, unzip it and run `bin/server`
+(`bin\server.bat` on Windows). It serves the browser version too; options are below.
+
 ## Running it
 
 Requirements: **JDK 17+** (the Gradle wrapper fetches everything else).
@@ -74,16 +93,19 @@ layout included). Tailscale also tells the server who is connecting, which pre-f
 ### 3. The desktop app
 
 ```bash
-./gradlew :shared:run                 # run it
-./gradlew :shared:packageMsi          # Windows installer (.deb / .dmg on Linux / macOS)
+./gradlew :shared:run                         # run it
+./gradlew :shared:packageMsi -PwithWeb        # Windows installer (.deb / .dmg on Linux / macOS)
 ```
 
-On first launch it asks for your name; the server address (Settings, top-right) defaults to
-`http://localhost:8870` — use the `https://….ts.net` address on other machines.
+The app has the server built in and starts it unless one already runs on this computer (see
+*Install*); `-PwithWeb` also puts the browser version in it, for phones and other computers. The
+server address (on the sign-in screen) defaults to `http://localhost:8870`; use the
+`https://….ts.net` address to work on someone else's server.
 
 ### 4. Accounts
 
-Everyone signs in with a username and password. Change either one in **Settings** (click your
+Everyone signs in with a username and password. A brand-new server (a fresh install) has no
+accounts yet: its sign-in screen offers to create the first one. Change either one in **Settings** (click your
 name, top-right). A rename also updates the author on your past messages and nodes. Admin
 commands, run against the database (`--data` defaults to `~/.nodenote-server`):
 
@@ -94,8 +116,7 @@ server passwd <name> <new password>  # reset a forgotten password (signs them ou
 ```
 
 (`server` = `server/build/install/server/bin/server`, or `java -cp "lib/*" com.nodenote.server.MainKt`
-inside `Apps
-odenote-server`.) Passwords are stored as salted PBKDF2 hashes. Sessions last 60 days
+inside `Apps\nodenote-server`.) Passwords are stored as salted PBKDF2 hashes. Sessions last 60 days
 of inactivity. Failed sign-ins are throttled (5 per username per 15 minutes).
 
 ### 5. Public access (Tailscale Funnel)

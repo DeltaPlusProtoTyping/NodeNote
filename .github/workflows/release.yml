@@ -1,8 +1,10 @@
 name: Release
 
-# Builds native installers on each platform's own runner and attaches them to a
-# GitHub Release. Triggered by pushing a version tag, e.g.:
-#   git tag v1.0.0 && git push origin v1.0.0
+# Builds the installers on each platform's own runner and attaches them to a GitHub Release,
+# together with the standalone server. Triggered by pushing a version tag, e.g.:
+#   git tag v2.0.0 && git push origin v2.0.0
+# Every installer has the server built in (an install runs its own: see LocalServer.kt), and
+# -PwithWeb adds the browser version so phones and other computers can use it too.
 on:
   push:
     tags:
@@ -21,16 +23,20 @@ jobs:
         include:
           - os: windows-latest
             label: Windows (.msi)
-            task: packageMsi
+            task: ':shared:packageMsi'
             artifact: shared/build/compose/binaries/main/msi/*.msi
           - os: macos-latest
             label: macOS (.dmg)
-            task: packageDmg
+            task: ':shared:packageDmg'
             artifact: shared/build/compose/binaries/main/dmg/*.dmg
           - os: ubuntu-latest
             label: Linux (.deb)
-            task: packageDeb
+            task: ':shared:packageDeb'
             artifact: shared/build/compose/binaries/main/deb/*.deb
+          - os: ubuntu-latest
+            label: Server (.zip)
+            task: ':server:distZip'
+            artifact: dist/*.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -44,22 +50,29 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y fakeroot binutils
 
-      - name: Build installer
+      - name: Build
         shell: bash
         run: |
           chmod +x ./gradlew || true
-          ./gradlew :shared:${{ matrix.task }} --no-daemon --stacktrace
+          ./gradlew ${{ matrix.task }} -PwithWeb --no-daemon --stacktrace
 
-      - name: Attach installer to the release
+      - name: Name the server zip
+        if: matrix.task == ':server:distZip'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp server/build/distributions/server.zip "dist/NodeNote-Server-${GITHUB_REF_NAME}.zip"
+
+      - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.artifact }}
 
-      # When run manually (no tag), keep the installer as a downloadable build artifact instead.
+      # When run manually (no tag), keep the build as a downloadable artifact instead.
       - name: Upload build artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
-          name: NodeNote-${{ matrix.os }}
+          name: NodeNote-${{ matrix.os }}-${{ strategy.job-index }}
           path: ${{ matrix.artifact }}

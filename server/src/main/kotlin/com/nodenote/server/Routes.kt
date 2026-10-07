@@ -51,6 +51,10 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
                 val request = call.receive<LoginRequest>()
                 call.respond(accounts.login(request.username, request.password))
             }
+            post("/setup") {
+                val request = call.receive<LoginRequest>()
+                call.respond(accounts.setUp(request.username, request.password))
+            }
             post("/logout") {
                 accounts.logout(call.token())
                 call.respond(HttpStatusCode.NoContent)
@@ -83,7 +87,9 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
             // Set by `tailscale serve` for requests from tailnet users; absent when hit directly.
             val identity = call.request.headers["Tailscale-User-Name"]?.takeIf { it.isNotBlank() }
                 ?: call.request.headers["Tailscale-User-Login"]?.takeIf { it.isNotBlank() }
-            call.respond(ServerInfo("NodeNote", SERVER_VERSION, config.vaultDir.toString(), identity, webBuild(config)))
+            call.respond(
+                ServerInfo("NodeNote", SERVER_VERSION, config.vaultDir.toString(), identity, webBuild(config), accounts.needsSetup()),
+            )
         }
 
         route("/boards") {
@@ -172,7 +178,7 @@ class RequireSignInConfig {
 }
 
 /** Paths under /api that work without signing in. */
-private val OpenPaths = setOf("/api/info", "/api/auth/login")
+private val OpenPaths = setOf("/api/info", "/api/auth/login", "/api/auth/setup")
 
 /**
  * Every /api call except [OpenPaths] needs `Authorization: Bearer <token>` from

@@ -106,6 +106,7 @@ data class ApiError(val error: String)
  */
 fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long = 1500) {
     val database = Database(config.databaseFile)
+    config.rememberVault()
     val backups = Backups(database, config.dataDir.resolve("backups")).also { it.start() }
     val store = BoardStore(database)
     val accounts = Accounts(database)

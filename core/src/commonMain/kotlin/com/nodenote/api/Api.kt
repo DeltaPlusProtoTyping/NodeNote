@@ -36,6 +36,8 @@ data class ServerInfo(
      * drop fields it doesn't know about when it edits a node).
      */
     val webBuild: String? = null,
+    /** No accounts yet (a fresh install): the sign-in screen offers to create the first one instead. */
+    val needsSetup: Boolean = false,
 )
 
 @Serializable
@@ -112,6 +114,7 @@ val ApiJson: Json = Json {
 // ---- Accounts ----
 //
 //   POST /api/auth/login             LoginRequest -> LoginResponse   (no token needed)
+//   POST /api/auth/setup             LoginRequest -> LoginResponse   (no token; only while there are no accounts)
 //   POST /api/auth/logout            -> 204
 //   GET  /api/auth/me                -> AccountInfo
 //   POST /api/auth/password          ChangePasswordRequest -> 204

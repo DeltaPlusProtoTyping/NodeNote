@@ -4,12 +4,14 @@ Forked from NodeNote (`Documents\nodeNote`) at 42b2845. Now a shared, node-based
 for process improvement at the machine shop: per-node chats, 1–10 importance on key details,
 issue status tracking, Obsidian vault mirror. Desktop + browser clients, one server over Tailscale.
 
-- Remote `upstream` = NodeNote on GitHub, fetch-only (push disabled). No `origin` yet — create a
-  new GitHub repo before pushing.
+- Remote `origin` = github.com/DeltaPlusProtoTyping/NodeNote-Boards (private, default branch
+  `boards-and-chat`); `upstream` = NodeNote on GitHub, fetch-only (push disabled).
+- Releases: push a `v*` tag; `.github/workflows/release.yml` builds the MSI/DMG/DEB (server and
+  browser version built in, `-PwithWeb`) plus `NodeNote-Server-<tag>.zip` onto a GitHub Release.
 - Windows `upgradeUuid` already changed so this app's MSI won't replace NodeNote's.
 - Still named NodeNote (final name undecided): `packageName` / `bundleID` in
   `shared/build.gradle.kts`, client prefs dir `~/.nodenote` (`ProjectStorage.desktop.kt`),
-  `com.nodenote` package, `.github/workflows/release.yml` (still desktop-only).
+  `com.nodenote` package.
 
 ## Modules
 - `core` (KMP: jvm, wasmJs, ios) — models + `BoardPatch` diff/apply/rebase + wire DTOs (`api/Api.kt`,
@@ -89,3 +91,10 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 - The Bash tool mangles `\\n` and apostrophes inside `python - <<'PY'` heredocs: write edit
   scripts to the scratchpad with the Write tool and run them.
 - Claude's sandbox virtualizes `%APPDATA%`; don't launch the app from Claude tools for real data.
+  To try the packaged app, give it a throwaway home: `JAVA_TOOL_OPTIONS=-Duser.home=<scratch>` and a
+  `<scratch>/.nodenote/server_url.txt` with a free port (e.g. `http://localhost:8872`).
+- The desktop app has the server built in (`desktopMain/.../LocalServer.kt`): at launch it starts
+  one when its server address is this computer and that port is free, else it uses the server
+  already running (Ben's PC: the scheduled one). Data `~/.nodenote-server`; the vault comes from
+  `--vault`, else the folder remembered in `<data>/vault-path.txt`. A fresh server's first account
+  is made on the sign-in screen (`POST /api/auth/setup`, refused once any account exists).

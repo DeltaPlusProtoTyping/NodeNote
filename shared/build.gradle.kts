@@ -66,6 +66,10 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
                 implementation("io.ktor:ktor-client-okhttp:$ktorVersion")
+                // The server, built in: an installed app runs its own (see LocalServer).
+                implementation(project(":server"))
+                implementation("io.ktor:ktor-server-core:$ktorVersion")
+                implementation("io.ktor:ktor-server-netty:$ktorVersion")
             }
         }
         wasmJsMain.dependencies {
@@ -88,8 +92,9 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "NodeNote"
             packageVersion = "2.0.0"
-            // The trimmed runtime needs EC crypto for HTTPS (Tailscale serve certificates).
-            modules("jdk.crypto.ec")
+            // The trimmed runtime needs EC crypto for HTTPS (Tailscale serve certificates), and the
+            // built-in server SQLite (java.sql) plus what Netty and Ktor use (suggestRuntimeModules).
+            modules("jdk.crypto.ec", "java.instrument", "java.management", "java.sql", "jdk.unsupported")
 
             windows {
                 // jpackage/MSI can't show a "create a shortcut?" prompt or auto-launch

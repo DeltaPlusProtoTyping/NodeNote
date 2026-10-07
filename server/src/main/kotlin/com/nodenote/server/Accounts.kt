@@ -4,6 +4,8 @@ import com.nodenote.api.LoginResponse
 import com.nodenote.model.nowMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -91,6 +93,23 @@ class Accounts(
         require(taken == null || taken.first.equals(username, ignoreCase = true)) { "The username \"$name\" is already taken" }
         io { db.renameUser(username, name, clock()) }
         return name
+    }
+
+    // ---- first run ----
+
+    private val setupLock = Mutex()
+
+    /** True while the server has no accounts at all (a fresh install). */
+    suspend fun needsSetup(): Boolean = io { db.users().isEmpty() }
+
+    /**
+     * A fresh install's first account, made from the sign-in screen and signed straight in.
+     * Refused once any account exists, so it can never be used to add someone later.
+     */
+    suspend fun setUp(username: String, password: String): LoginResponse = setupLock.withLock {
+        if (!needsSetup()) throw ForbiddenException("This server already has accounts: sign in instead")
+        io { addUser(username, password) }
+        login(username, password)
     }
 
     // ---- admin (command line) ----

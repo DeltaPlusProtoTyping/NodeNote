@@ -27,6 +27,14 @@ data class ServerConfig(
 ) {
     val databaseFile: Path get() = dataDir.resolve("nodenote.db")
 
+    /** Notes the vault folder next to the data, for servers later started without `--vault`. */
+    fun rememberVault() {
+        runCatching {
+            Files.createDirectories(dataDir)
+            Files.writeString(dataDir.resolve(VAULT_NOTE), vaultDir.toString())
+        }
+    }
+
     companion object {
         const val DEFAULT_PORT = 8870
         const val DEFAULT_HOST = "127.0.0.1"
@@ -55,15 +63,27 @@ data class ServerConfig(
             val port = setting("port", "NODENOTE_PORT")?.let {
                 it.toIntOrNull()?.takeIf { p -> p in 0..65535 } ?: throw IllegalArgumentException("Invalid port: $it")
             } ?: DEFAULT_PORT
+            val dataDir = setting("data", "NODENOTE_DATA")?.let(::expandPath) ?: home.resolve(".nodenote-server")
             return ServerConfig(
                 port = port,
                 host = setting("host", "NODENOTE_HOST") ?: DEFAULT_HOST,
-                dataDir = setting("data", "NODENOTE_DATA")?.let(::expandPath) ?: home.resolve(".nodenote-server"),
+                dataDir = dataDir,
+                // Without --vault: the folder this data was last mirrored to, so a server started
+                // another way (the desktop app's own) keeps writing to the same place.
                 vaultDir = setting("vault", "NODENOTE_VAULT")?.let(::expandPath)
+                    ?: rememberedVault(dataDir)
                     ?: home.resolve("Documents").resolve("NodeNote Vault"),
                 webDir = setting("web", "NODENOTE_WEB")?.let(::expandPath) ?: defaultWebDir(),
             )
         }
+
+        /** Where [ServerConfig.rememberVault] noted the vault for this data directory. */
+        private fun rememberedVault(dataDir: Path): Path? =
+            runCatching { Files.readString(dataDir.resolve(VAULT_NOTE)).trim() }.getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { Paths.get(it) }
+
+        private const val VAULT_NOTE = "vault-path.txt"
 
         /** The dev build of the browser app, when the server is run from a repo checkout that has one. */
         private fun defaultWebDir(): Path? =
