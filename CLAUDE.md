@@ -68,7 +68,10 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 - Cards: `Node.scale` multiplies the whole card (width/height include it; NodeCard lays out at
   width/scale and scales by zoom×scale, so drag deltas need ×scale). Heights auto-fit the title
   via `AppState.fitNodeHeight` — grow-only unless this device edited the title, so two clients
-  measuring fonts differently can't ping-pong.
+  measuring fonts differently can't ping-pong. A card's size IS its importance (0–12; 11–12 urgent):
+  `core/.../model/ImportanceSize.kt` maps levels to scales, rating resizes around the centre,
+  Size presets / corner drag set the importance, and `AppState.sizeCardsByImportance` puts a board
+  in step on load. Never set `scale` without the matching importance. Effort stays 1–10.
 - Exports: `core/.../export/MapScene.kt` builds one vector `Scene` (Helvetica metrics) that
   `SvgWriter`/`PdfWriter` write out and `MapExporter` rasterizes for PNG and the dialog preview.
   Private nodes are left out unless "Include private nodes" is ticked.

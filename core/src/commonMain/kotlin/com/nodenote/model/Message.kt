@@ -34,7 +34,7 @@ data class Message(
     val author: String,
     val text: String,
     val kind: MessageKind = MessageKind.Note,
-    /** 0 = not rated, otherwise 1 (minor) … 10 (critical key detail). */
+    /** 0 = not rated, otherwise 1 (minor) … 10 (critical key detail), 11–12 urgent. */
     val importance: Int = 0,
     val linkedNodeIds: List<String> = emptyList(),
     /** Only meaningful for [MessageKind.Action]: the action item is done. */

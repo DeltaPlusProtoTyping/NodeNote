@@ -57,6 +57,13 @@ object ClientPrefs {
             ProjectStorage.writePrefs("colorby.txt", value.name)
         }
 
+    /** The key legend in the map's corner: open, or minimized to a small "Keys" tab. */
+    var keysLegendOpen: Boolean
+        get() = ProjectStorage.readPrefs("keys_legend.txt")?.trim() != "0"
+        set(value) {
+            ProjectStorage.writePrefs("keys_legend.txt", if (value) "1" else "0")
+        }
+
     /** Words this person told the spell checker to accept (per device). */
     var dictionaryWords: List<String>
         get() = decode(ProjectStorage.readPrefs("dictionary.json"), idList) ?: emptyList()

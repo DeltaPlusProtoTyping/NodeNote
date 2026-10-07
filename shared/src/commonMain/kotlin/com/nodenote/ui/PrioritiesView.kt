@@ -345,7 +345,7 @@ private fun KeyDetailsView(state: AppState, modifier: Modifier) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Rated", fontSize = 11.sp, color = TextSecondary)
-                listOf(3, 5, 7, 9).forEach { t ->
+                listOf(3, 5, 7, 9, 11).forEach { t ->
                     FilterChip("$t+", selected = state.keyDetailThreshold == t, color = importanceColor(t)) { state.keyDetailThreshold = t }
                 }
                 Spacer(Modifier.weight(1f))
@@ -438,6 +438,6 @@ private fun keyDetailsMarkdown(state: AppState, details: List<Message>): String 
     for (m in details) {
         val node = state.project.nodes.find { it.id == m.nodeId }?.title ?: "Unsorted"
         val kind = if (m.kind != MessageKind.Note) " ${m.kind.label}:" else ""
-        appendLine("- [${m.importance}/10]$kind ${m.text.replace('\n', ' ')} — $node (${m.author}, ${formatStamp(m.createdAt)})")
+        appendLine("- [★${m.importance}]$kind ${m.text.replace('\n', ' ')} — $node (${m.author}, ${formatStamp(m.createdAt)})")
     }
 }

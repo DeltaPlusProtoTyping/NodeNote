@@ -79,7 +79,7 @@ class ApiTest {
         val board = createBoard("Chat")
         val posted = post(board.id, message("m1", "ignored", "", "First thought", importance = 15))
         assertEquals(board.id, posted.boardId)
-        assertEquals(10, posted.importance) // clamped
+        assertEquals(12, posted.importance) // clamped to the top (urgent) level
         assertTrue(posted.createdAt > 0)
         assertTrue(posted.seq > 0)
         assertEquals(0, posted.editedAt)
@@ -109,6 +109,10 @@ class ApiTest {
         assertEquals(listOf(deleted), tombstones)
 
         assertEquals(HttpStatusCode.NotFound, client.patch("/api/messages/nope") { json(MessageUpdate(done = true)) }.status)
+
+        // 11 and 12 are the urgent levels, above the old 1-10.
+        val urgent = post(board.id, message("m3", board.id, "", "Coolant leak on the VF-2", importance = 11))
+        assertEquals(11, urgent.importance)
     }
 
     @Test

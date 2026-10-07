@@ -18,13 +18,14 @@ enum class ColorBy(val label: String, val hint: String) {
 /** One row of a lens legend; [colorArgb] 0 = shown untinted. */
 data class LensKey(val label: String, val colorArgb: Long)
 
-/** Importance scale (same as the app's badges): 1–2 slate, 3–4 blue, 5–6 amber, 7–8 orange, 9–10 red. */
+/** Importance scale (same as the app's badges): 1–2 slate, 3–4 blue, 5–6 amber, 7–8 orange, 9–10 red, 11–12 (urgent) pink. */
 fun importanceArgb(importance: Int): Long = when (importance) {
     1, 2 -> 0xFF8FA0B3
     3, 4 -> 0xFF5B9CFF
     5, 6 -> 0xFFE5B25B
     7, 8 -> 0xFFE58E5B
-    else -> 0xFFE2606B
+    9, 10 -> 0xFFE2606B
+    else -> 0xFFEC4899
 }
 
 /** Effort scale: 1–3 green (quick), 4–6 amber, 7–10 violet (a big one). */
@@ -99,7 +100,7 @@ class Lens(val project: Project, val by: ColorBy) {
             ColorBy.Type -> emptyList()
             ColorBy.Status -> NodeStatus.entries.filter { s -> s != NodeStatus.None && nodes.any { it.status == s } }
                 .map { LensKey(it.label, it.colorArgb) } + none("No status")
-            ColorBy.Importance -> listOf(9 to "9–10 critical", 7 to "7–8", 5 to "5–6", 3 to "3–4", 1 to "1–2 minor")
+            ColorBy.Importance -> listOf(11 to "11–12 urgent", 9 to "9–10 critical", 7 to "7–8", 5 to "5–6", 3 to "3–4", 1 to "1–2 minor")
                 .filter { (v, _) -> nodes.any { it.importance == v || it.importance == v + 1 } }
                 .map { (v, label) -> LensKey(label, importanceArgb(v)) } + none("Not rated")
             ColorBy.Effort -> listOf(1 to "1–3 small job", 4 to "4–6", 7 to "7–10 big job")

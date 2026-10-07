@@ -479,7 +479,7 @@ object MapSceneBuilder {
 
     private const val PRIVATE = 0xFFE5B25B
 
-    /** Same scales as the app (ChatWidgets): importance 1–2 slate … 9–10 red; effort green → amber → violet. */
+    /** Same scales as the app (ChatWidgets): importance 1–2 slate … 9–10 red, 11–12 pink; effort green → amber → violet. */
     fun importanceColor(importance: Int): Long = importanceArgb(importance)
 
     fun effortColor(effort: Int): Long = effortArgb(effort)

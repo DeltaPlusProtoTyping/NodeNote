@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nodenote.model.MAX_EFFORT
+import com.nodenote.model.MAX_IMPORTANCE
 import com.nodenote.model.Node
 import com.nodenote.model.Pick
 import com.nodenote.model.pick
@@ -65,7 +67,8 @@ import kotlin.math.roundToInt
  * Rating by placing: every open card as a chip on an importance × effort board (up =
  * matters more, right = a bigger job), with the PICK quadrants behind. Dragging a chip
  * sets both ratings at once; cards not rated yet wait in the strip along the bottom, and
- * dragging a chip back there clears its ratings. One undo step per drop.
+ * dragging a chip back there clears its ratings. One undo step per drop. Importance runs
+ * 1–12 up the side (the top two rows are urgent), effort 1–10 along the bottom.
  */
 @Composable
 fun RateBoardDialog(state: AppState) {
@@ -176,7 +179,9 @@ private fun RateBoard(
         val gap = 4f * density
         val chipH = 22f * density
         val planeW = totalW - gutter
-        val chipW = (planeW / 10f - gap).coerceIn(64f * density, 150f * density)
+        val rowsI = MAX_IMPORTANCE.toFloat()
+        val colsE = MAX_EFFORT.toFloat()
+        val chipW = (planeW / colsE - gap).coerceIn(64f * density, 150f * density)
         val rated = cards.filter { it.importance > 0 && it.effort > 0 }
         val waiting = cards.filter { it.importance == 0 || it.effort == 0 }
         val perRow = max(1, floor((planeW + gap) / (chipW + gap)).toInt())
@@ -188,8 +193,8 @@ private fun RateBoard(
         /** Ratings for a chip whose centre is at ([cx], [cy]); null when it isn't over the plane. */
         fun ratingAt(cx: Float, cy: Float): Pair<Int, Int>? {
             if (cx < gutter || cx > totalW || cy < 0f || cy > planeH) return null
-            val effort = (floor((cx - gutter) / planeW * 10f).toInt() + 1).coerceIn(1, 10)
-            val importance = (10 - floor(cy / planeH * 10f).toInt()).coerceIn(1, 10)
+            val effort = (floor((cx - gutter) / planeW * colsE).toInt() + 1).coerceIn(1, MAX_EFFORT)
+            val importance = (MAX_IMPORTANCE - floor(cy / planeH * rowsI).toInt()).coerceIn(1, MAX_IMPORTANCE)
             return importance to effort
         }
 
@@ -197,8 +202,8 @@ private fun RateBoard(
         val home = HashMap<String, Offset>()
         rated.groupBy { it.importance to it.effort }.forEach { (cell, group) ->
             val (i, e) = cell
-            val cx = gutter + (e - 0.5f) / 10f * planeW
-            val cy = (10 - i + 0.5f) / 10f * planeH
+            val cx = gutter + (e - 0.5f) / colsE * planeW
+            val cy = (MAX_IMPORTANCE - i + 0.5f) / rowsI * planeH
             group.sortedBy { it.title.lowercase() }.forEachIndexed { j, n ->
                 val dy = (j - (group.size - 1) / 2f) * chipH * 0.6f
                 home[n.id] = Offset(cx - chipW / 2f, (cy - chipH / 2f + dy).coerceIn(0f, planeH - chipH))
@@ -208,33 +213,43 @@ private fun RateBoard(
             home[n.id] = Offset(gutter + (j % perRow) * (chipW + gap), stripTop + 22f * density + (j / perRow) * (chipH + gap))
         }
 
+        // Effort 4 | 5 and importance 5 | 6 split the PICK quadrants; above importance 10 is urgent.
+        val split = Offset(gutter + Pick.SMALL_JOB / colsE * planeW, (MAX_IMPORTANCE - Pick.IMPORTANT + 1) / rowsI * planeH)
+        val urgentBottom = (MAX_IMPORTANCE - 10) / rowsI * planeH
+
         // Quadrants, grid and axes.
         Canvas(Modifier.fillMaxSize()) {
-            val split = Offset(gutter + 0.4f * planeW, 0.5f * planeH) // effort 4 | 5, importance 5 | 6
             fun quad(pick: Pick, l: Float, t: Float, r: Float, b: Float) =
                 drawRect(pickColor(pick).copy(alpha = 0.09f), Offset(l, t), Size(r - l, b - t))
             quad(Pick.QuickWin, gutter, 0f, split.x, split.y)
             quad(Pick.BigBet, split.x, 0f, totalW, split.y)
             quad(Pick.FillIn, gutter, split.y, split.x, planeH)
             quad(Pick.Rethink, split.x, split.y, totalW, planeH)
-            for (k in 1 until 10) {
-                drawLine(PanelBorder.copy(alpha = 0.35f), Offset(gutter + k / 10f * planeW, 0f), Offset(gutter + k / 10f * planeW, planeH))
-                drawLine(PanelBorder.copy(alpha = 0.35f), Offset(gutter, k / 10f * planeH), Offset(totalW, k / 10f * planeH))
+            drawRect(importanceColor(MAX_IMPORTANCE).copy(alpha = 0.08f), Offset(gutter, 0f), Size(planeW, urgentBottom))
+            for (k in 1 until MAX_EFFORT) {
+                drawLine(PanelBorder.copy(alpha = 0.35f), Offset(gutter + k / colsE * planeW, 0f), Offset(gutter + k / colsE * planeW, planeH))
             }
+            for (k in 1 until MAX_IMPORTANCE) {
+                drawLine(PanelBorder.copy(alpha = 0.35f), Offset(gutter, k / rowsI * planeH), Offset(totalW, k / rowsI * planeH))
+            }
+            drawLine(importanceColor(MAX_IMPORTANCE).copy(alpha = 0.6f), Offset(gutter, urgentBottom), Offset(totalW, urgentBottom), strokeWidth = 1f * density)
             drawLine(TextFaint.copy(alpha = 0.6f), Offset(split.x, 0f), Offset(split.x, planeH), strokeWidth = 1.5f * density)
             drawLine(TextFaint.copy(alpha = 0.6f), Offset(gutter, split.y), Offset(totalW, split.y), strokeWidth = 1.5f * density)
             drawRect(PanelBorder, Offset(gutter, 0f), Size(planeW, planeH), style = androidx.compose.ui.graphics.drawscope.Stroke(1f * density))
             drawRect(PanelBorder.copy(alpha = 0.25f), Offset(gutter, stripTop), Size(planeW, totalH - stripTop))
         }
-        QuadrantLabel(Pick.QuickWin, Offset(gutter + 8f * density, 6f * density))
-        QuadrantLabel(Pick.BigBet, Offset(gutter + 0.4f * planeW + 8f * density, 6f * density))
-        QuadrantLabel(Pick.FillIn, Offset(gutter + 8f * density, 0.5f * planeH + 6f * density))
-        QuadrantLabel(Pick.Rethink, Offset(gutter + 0.4f * planeW + 8f * density, 0.5f * planeH + 6f * density))
-        for (i in 1..10) {
-            AxisText("$i", Offset(4f * density, (10 - i + 0.5f) / 10f * planeH - 8f * density))
-            AxisText("$i", Offset(gutter + (i - 0.5f) / 10f * planeW - 4f * density, planeH + 3f * density))
+        QuadrantLabel(Pick.QuickWin, Offset(gutter + 8f * density, urgentBottom + 6f * density))
+        QuadrantLabel(Pick.BigBet, Offset(split.x + 8f * density, urgentBottom + 6f * density))
+        QuadrantLabel(Pick.FillIn, Offset(gutter + 8f * density, split.y + 6f * density))
+        QuadrantLabel(Pick.Rethink, Offset(split.x + 8f * density, split.y + 6f * density))
+        for (i in 1..MAX_IMPORTANCE) {
+            AxisText("$i", Offset(4f * density, (MAX_IMPORTANCE - i + 0.5f) / rowsI * planeH - 8f * density), color = if (i > 10) importanceColor(i) else null)
         }
-        AxisText("Matters more", Offset(gutter + planeW - 92f * density, 6f * density), faint = true)
+        for (e in 1..MAX_EFFORT) {
+            AxisText("$e", Offset(gutter + (e - 0.5f) / colsE * planeW - 4f * density, planeH + 3f * density))
+        }
+        AxisText("Urgent", Offset(gutter + planeW - 52f * density, 4f * density), color = importanceColor(MAX_IMPORTANCE))
+        AxisText("Matters more", Offset(gutter + planeW - 92f * density, urgentBottom + 6f * density), faint = true)
         AxisText("Bigger job", Offset(gutter + planeW - 70f * density, planeH - 18f * density), faint = true)
         AxisText(
             if (waiting.isEmpty()) "Every open card is rated. Drag one back here to clear its rating."
@@ -284,11 +299,11 @@ private fun QuadrantLabel(pick: Pick, at: Offset) {
 }
 
 @Composable
-private fun AxisText(text: String, at: Offset, faint: Boolean = false) {
+private fun AxisText(text: String, at: Offset, faint: Boolean = false, color: Color? = null) {
     Text(
         text,
         fontSize = if (faint) 10.sp else 11.sp,
-        color = if (faint) TextFaint else TextSecondary,
+        color = color ?: if (faint) TextFaint else TextSecondary,
         modifier = Modifier.offset { IntOffset(at.x.roundToInt(), at.y.roundToInt()) },
     )
 }

@@ -337,7 +337,7 @@ private fun CardRating(state: AppState, node: Node) {
     }
 }
 
-/** Bottom-right handle of the selected card: drag to make the node bigger or smaller (text scales with it). */
+/** Bottom-right handle of the selected card: drag to make it bigger or smaller, which sets its importance (text scales with it). */
 @Composable
 private fun BoxScope.ResizeGrip(state: AppState, node: Node) {
     Box(

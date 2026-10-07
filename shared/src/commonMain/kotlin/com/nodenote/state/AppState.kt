@@ -29,7 +29,12 @@ import com.nodenote.model.Project
 import com.nodenote.model.areaOf
 import com.nodenote.model.areasInside
 import com.nodenote.model.cardsIn
+import com.nodenote.model.clampEffort
 import com.nodenote.model.clampImportance
+import com.nodenote.model.importanceForScale
+import com.nodenote.model.scaleForImportance
+import com.nodenote.model.scaledAroundCenter
+import com.nodenote.model.withSizesByImportance
 import com.nodenote.model.edgeType
 import com.nodenote.model.fittedTo
 import com.nodenote.model.mentionsIn
@@ -192,6 +197,7 @@ class AppState(val session: Session) {
         replaceProject(board, "Opened ${board.name}")
         zoomToFitWhenSized = true
         adoptBuiltinTypes()
+        sizeCardsByImportance()
         session.loadSpellChecker()
     }
 
@@ -200,6 +206,15 @@ class AppState(val session: Session) {
      * "Project") hands its nodes over to the built-in, so everyone sees one type. The
      * custom entry stays on the board (types are never deleted) but is no longer offered.
      */
+    /**
+     * A card's size is its importance. Boards from before that (or edits from an old tab) are
+     * put in step once on opening: rated cards take their level's size, and cards sized by
+     * hand get the importance of their size. Synced like any edit; nothing to undo.
+     */
+    private fun sizeCardsByImportance() {
+        project = project.withSizesByImportance()
+    }
+
     private fun adoptBuiltinTypes() {
         val builtinByLabel = BuiltinTypes.nodes.associateBy { it.label.trim().lowercase() }
         val remap = project.customNodeTypes.mapNotNull { custom ->
@@ -751,9 +766,11 @@ class AppState(val session: Session) {
      */
     var freshNodeId by mutableStateOf<String?>(null)
         private set
-    private var freshParentId: String? = null
+    var freshParentId: String? = null
+        private set
     private var freshUndoDepth = -1
-    private var freshIsContinuation = false
+    var freshIsContinuation = false
+        private set
 
     private fun beginFreshTitle(nodeId: String, parentId: String?, continuation: Boolean) {
         freshNodeId = nodeId
@@ -870,14 +887,16 @@ class AppState(val session: Session) {
         if (status == NodeStatus.Solved) this.status = "Solved: \"${node.title}\" is on the Wins list"
     }
 
+    /** Rates a card; its size follows (growing or shrinking around its centre). */
     fun setNodeImportance(id: String, value: Int) {
+        val v = clampImportance(value)
         pushUndo()
-        updateNode(id) { it.copy(importance = clampImportance(value)) }
+        updateNode(id) { it.copy(importance = v).scaledAroundCenter(scaleForImportance(v)) }
     }
 
     fun setNodeEffort(id: String, value: Int) {
         pushUndo()
-        updateNode(id) { it.copy(effort = clampImportance(value)) }
+        updateNode(id) { it.copy(effort = clampEffort(value)) }
     }
 
     fun setNodePrivate(id: String, private: Boolean) {
@@ -892,15 +911,18 @@ class AppState(val session: Session) {
     }
 
     /**
-     * Resizes a card around its top-left corner; everything on it (text included) scales.
+     * Dragging a card's corner: the card snaps to the importance level whose size is nearest
+     * [scale] and takes that importance (a card's size is its importance). It grows around its
+     * top-left corner, under the pointer; everything on it (text included) scales.
      * [pushUndoStep] is false for the moves of a drag after its first.
      */
     fun setNodeScale(id: String, scale: Float, pushUndoStep: Boolean = true) {
         val node = project.nodes.find { it.id == id } ?: return
-        val s = scale.coerceIn(Node.MIN_SCALE, Node.MAX_SCALE)
-        if (s == node.scale) return
+        val level = importanceForScale(scale)
+        val s = scaleForImportance(level)
+        if (s == node.scale && (level == node.importance || node.importance == 0)) return // no change (an unrated card nudged stays unrated)
         if (pushUndoStep) pushUndo()
-        updateNode(id) { n -> n.copy(scale = s, width = n.width / n.scale * s, height = n.height / n.scale * s) }
+        updateNode(id) { n -> n.copy(importance = level, scale = s, width = n.width / n.scale * s, height = n.height / n.scale * s) }
     }
 
     /** Nodes whose title this device just changed: their card may shrink back to fit, not only grow. */
@@ -1608,10 +1630,10 @@ class AppState(val session: Session) {
     fun rateNode(id: String, importance: Int, effort: Int) {
         val node = project.nodes.find { it.id == id } ?: return
         val i = clampImportance(importance)
-        val e = clampImportance(effort)
+        val e = clampEffort(effort)
         if (node.importance == i && node.effort == e) return
         pushUndo()
-        updateNode(id) { it.copy(importance = i, effort = e) }
+        updateNode(id) { it.copy(importance = i, effort = e).scaledAroundCenter(scaleForImportance(i)) }
     }
 
     // ---- Chat ----
@@ -1980,7 +2002,7 @@ class AppState(val session: Session) {
         }
         placeNodeOfType(spot, type)
         val node = selectedNode ?: return
-        updateNode(node.id) { it.copy(title = title, importance = m.importance) }
+        updateNode(node.id) { it.copy(title = title, importance = m.importance).scaledAroundCenter(scaleForImportance(m.importance)) }
         // Children point at their parent, like the rest of the map.
         if (parent != null) project = project.copy(edges = project.edges + Edge(newId(), node.id, parent.id))
         moveMessage(id, node.id)

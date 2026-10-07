@@ -43,7 +43,10 @@ data class Node(
     val properties: Map<String, String> = emptyMap(),
     val attachments: List<Attachment> = emptyList(),
     val status: NodeStatus = NodeStatus.None,
-    /** 0 = not rated, otherwise 1 (minor) … 10 (critical). */
+    /**
+     * 0 = not rated, otherwise 1 (minor) … 10 (critical), 11–12 urgent. It also sets how big
+     * the card is (see [scaleForImportance]).
+     */
     val importance: Int = 0,
     /** Who is driving this node (free text, usually a user name). */
     val owner: String = "",
@@ -74,5 +77,14 @@ data class Node(
     }
 }
 
-/** Importance and effort are always 0 (unrated) or 1..10. */
-fun clampImportance(value: Int): Int = value.coerceIn(0, 10)
+/** Importance of nodes and messages: 1 (minor) … 10 (critical); 11–12 are for urgent things. */
+const val MAX_IMPORTANCE = 12
+
+/** Effort: 1 (an afternoon) … 10 (a major project). */
+const val MAX_EFFORT = 10
+
+/** Importance is always 0 (unrated) or 1..[MAX_IMPORTANCE]. */
+fun clampImportance(value: Int): Int = value.coerceIn(0, MAX_IMPORTANCE)
+
+/** Effort is always 0 (unrated) or 1..[MAX_EFFORT]. */
+fun clampEffort(value: Int): Int = value.coerceIn(0, MAX_EFFORT)

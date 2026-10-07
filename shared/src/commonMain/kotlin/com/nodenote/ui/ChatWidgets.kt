@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nodenote.model.MAX_EFFORT
+import com.nodenote.model.MAX_IMPORTANCE
+import com.nodenote.model.importanceArgb
 import com.nodenote.model.MessageKind
 import com.nodenote.model.NodeLinkRegex
 import com.nodenote.model.NodeStatus
@@ -68,15 +71,8 @@ fun tightText(size: TextUnit, weight: FontWeight = FontWeight.Normal, color: Col
     lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
 )
 
-/** 1–2 slate, 3–4 blue, 5–6 amber, 7–8 orange, 9–10 red. 0 (unrated) is faint. */
-fun importanceColor(importance: Int): Color = when (importance) {
-    0 -> TextFaint
-    1, 2 -> Color(0xFF8FA0B3)
-    3, 4 -> Color(0xFF5B9CFF)
-    5, 6 -> Color(0xFFE5B25B)
-    7, 8 -> Color(0xFFE58E5B)
-    else -> Color(0xFFE2606B)
-}
+/** 1–2 slate, 3–4 blue, 5–6 amber, 7–8 orange, 9–10 red, 11–12 (urgent) pink ([importanceArgb]). 0 (unrated) is faint. */
+fun importanceColor(importance: Int): Color = if (importance <= 0) TextFaint else Color(importanceArgb(importance))
 
 /** Filled square with the importance number; nothing is drawn for 0 unless [showUnrated]. */
 @Composable
@@ -123,18 +119,19 @@ fun EffortBadge(effort: Int, modifier: Modifier = Modifier, height: Dp = 15.dp) 
     }
 }
 
-/** A row of cells "–, 1 … 10"; clicking the selected value again clears it. */
+/** A row of cells "–, 1 … 12" (11–12 urgent); clicking the selected value again clears it. */
 @Composable
-fun ImportancePicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) = ScalePicker(value, onChange, cell, ::importanceColor)
+fun ImportancePicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) =
+    ScalePicker(value, onChange, cell, MAX_IMPORTANCE, ::importanceColor)
 
-/** The same 1–10 row for effort. */
+/** The same kind of row, 1–10, for effort. */
 @Composable
-fun EffortPicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) = ScalePicker(value, onChange, cell, ::effortColor)
+fun EffortPicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) = ScalePicker(value, onChange, cell, MAX_EFFORT, ::effortColor)
 
 @Composable
-private fun ScalePicker(value: Int, onChange: (Int) -> Unit, cell: Dp, colorFor: (Int) -> Color) {
+private fun ScalePicker(value: Int, onChange: (Int) -> Unit, cell: Dp, max: Int, colorFor: (Int) -> Color) {
     Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-        for (n in 0..10) {
+        for (n in 0..max) {
             val selected = n == value
             val color = colorFor(n)
             Box(

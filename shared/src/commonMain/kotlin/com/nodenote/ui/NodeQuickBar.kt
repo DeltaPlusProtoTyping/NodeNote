@@ -289,7 +289,8 @@ private fun TypoChip(state: AppState, node: Node) {
     }
 }
 
-private val SizePresets = listOf("Small" to 0.8f, "Normal" to 1f, "Large" to 1.5f, "Huge" to 2.2f)
+/** The size presets, each an importance level: a card's size is its importance. */
+private val SizePresets = listOf("Small" to 1, "Normal" to 3, "Large" to 7, "Huge" to 10, "Urgent" to 12)
 
 @Composable
 private fun SizeChip(state: AppState, node: Node) {
@@ -301,21 +302,27 @@ private fun SizeChip(state: AppState, node: Node) {
             GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            SizePresets.forEach { (label, scale) ->
-                val current = kotlin.math.abs(node.scale - scale) < 0.05f
+            SizePresets.forEach { (label, level) ->
+                val current = node.importance == level
                 DropdownMenuItem(
-                    text = { Text(label, fontSize = 12.sp, color = if (current) Accent else TextPrimary) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, fontSize = 12.sp, color = if (current) Accent else TextPrimary, modifier = Modifier.width(58.dp))
+                            ImportanceBadge(level, size = 16.dp)
+                        }
+                    },
                     onClick = {
-                        state.setNodeScale(node.id, scale)
+                        state.setNodeImportance(node.id, level)
                         open = false
                     },
                 )
             }
             HorizontalDivider(color = PanelBorder)
             Text(
-                "Or drag the card's bottom-right corner",
+                "Size sets importance (1-12).\nOr drag the card's bottom-right corner.",
                 fontSize = 10.sp,
                 color = TextFaint,
+                lineHeight = 13.sp,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
             )
         }
@@ -330,6 +337,7 @@ fun RatingMenu(state: AppState, nodeId: String, expanded: Boolean, onDismiss: ()
         Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text("Importance: how much it matters", fontSize = 11.sp, color = TextSecondary)
             ImportancePicker(node.importance, onChange = { state.setNodeImportance(nodeId, it) }, cell = 22.dp)
+            Text("1 minor · 10 critical · 11-12 urgent. The card's size follows.", fontSize = 10.sp, color = TextFaint)
             Spacer(Modifier.height(2.dp))
             Text("Effort: how big a job", fontSize = 11.sp, color = TextSecondary)
             EffortPicker(node.effort, onChange = { state.setNodeEffort(nodeId, it) }, cell = 22.dp)

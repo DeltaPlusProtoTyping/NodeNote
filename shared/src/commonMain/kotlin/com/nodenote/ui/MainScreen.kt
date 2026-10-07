@@ -134,6 +134,8 @@ private fun CanvasArea(workspace: Workspace, modifier: Modifier) {
             } else {
                 GraphCanvas(tab, Modifier.fillMaxSize())
                 ConnectionBanner(tab, Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
+                // Keyboard help for the wide layout only (the phone layout has no keyboard to explain).
+                KeysLegend(tab, Modifier.align(Alignment.BottomStart).padding(10.dp))
             }
         }
     }
