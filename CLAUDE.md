@@ -46,7 +46,9 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 - DB changes: bump `Database.SCHEMA_VERSION` and append a migration; never edit a released step.
 - Server backs up the DB on every start + daily (`~/.nodenote-server/backups/`, 30 kept).
 - Real deployment: `C:\Users\Benjamin\Apps\nodenote-schedule.ps1` (task "NodeNote Server", port
-  8870, vault `IdeaVerse\02 Areas\Work Boards`, tailscale serve https :8870). Port 8787 is taken
+  8870, vault `IdeaVerse\02 Areas\Work Boards`, tailscale serve https :8870). The task starts at
+  logon and every 5 minutes (a no-op while running), so a stopped server comes back by itself;
+  the script disables it while deploying. Port 8787 is taken
   by one of Ben's Python apps.
 - Public: Tailscale Funnel `https://master.impala-bass.ts.net:10000/nodenote/` → 127.0.0.1:8870
   (Funnel ports are only 443/8443/10000, all used; `/` on :10000 is another app on 8092). The web
