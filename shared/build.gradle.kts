@@ -101,7 +101,7 @@ compose.desktop {
             // GitHub Actions release workflow builds each on its matching runner.
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "NodeNote"
-            packageVersion = "2.0.0"
+            packageVersion = "2.1.0"
             // The trimmed runtime needs EC crypto for HTTPS (Tailscale serve certificates), and the
             // built-in server SQLite (java.sql) plus what Netty and Ktor use (suggestRuntimeModules).
             modules("jdk.crypto.ec", "java.instrument", "java.management", "java.sql", "jdk.unsupported")
@@ -114,7 +114,7 @@ compose.desktop {
                 menu = true          // Start Menu entry
                 perUserInstall = true
                 dirChooser = true    // let the user pick the install folder in the wizard
-                upgradeUuid = "ea9ab37e-fc40-4600-85e2-a809fc7e14c0"
+                upgradeUuid = "8f0d6d3e-2b6b-4f3a-9b2a-2d8e6a1c4f57" // NodeNote's own: 2.x upgrades a 1.x install
                 iconFile.set(project.file("icons/nodenote.ico"))
             }
             linux {

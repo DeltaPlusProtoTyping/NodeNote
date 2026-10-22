@@ -36,7 +36,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 /** Server version reported by `/api/info`; 2.x = the networked, multi-user NodeNote. */
-const val SERVER_VERSION = "2.0.0"
+const val SERVER_VERSION = "2.1.0"
 
 /**
  * The JSON API. Shapes and semantics are defined in core's `Api.kt`; this file is

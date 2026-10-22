@@ -1,17 +1,18 @@
-# NodeNote fork — braindump boards for Ben & Nick
+# NodeNote 2 — braindump boards (Ben & Nick's process-improvement board)
 
-Forked from NodeNote (`Documents\nodeNote`) at 42b2845. Now a shared, node-based chat/issue board
-for process improvement at the machine shop: per-node chats, 1–10 importance on key details,
-issue status tracking, Obsidian vault mirror. Desktop + browser clients, one server over Tailscale.
+NodeNote, version 2: node map with a chat on every card, 1–12 importance (a card's size), issue
+status tracking. Boards live on the device (default, one person) or on a server (shared, live sync,
+Obsidian vault mirror, over Tailscale). Desktop + browser/phone clients from one codebase.
+(Grew out of the "NodeNote-Boards" fork, merged back into NodeNote at 2.1.0; that repo is archived.)
 
-- Remote `origin` = github.com/DeltaPlusProtoTyping/NodeNote-Boards (public, default branch
-  `boards-and-chat`); `upstream` = NodeNote on GitHub, fetch-only (push disabled).
+- Remote `origin` = github.com/DeltaPlusProtoTyping/NodeNote (public, branch `main`); `boards` =
+  the archived NodeNote-Boards repo.
 - Releases: push a `v*` tag; `.github/workflows/release.yml` builds the MSI/DMG/DEB (server and
   browser version built in, `-PwithWeb`) plus `NodeNote-Server-<tag>.zip` onto a GitHub Release.
-- Windows `upgradeUuid` already changed so this app's MSI won't replace NodeNote's.
-- Still named NodeNote (final name undecided): `packageName` / `bundleID` in
-  `shared/build.gradle.kts`, client prefs dir `~/.nodenote` (`ProjectStorage.desktop.kt`),
-  `com.nodenote` package.
+  Bump `packageVersion` (shared/build.gradle.kts) and `SERVER_VERSION` (server Routes.kt) first.
+- Windows `upgradeUuid` is NodeNote's own, so a new MSI upgrades older NodeNote installs in place.
+- App id: `packageName` / `bundleID` in `shared/build.gradle.kts`, client prefs dir `~/.nodenote`
+  (`ProjectStorage.desktop.kt`), `com.nodenote` package.
 
 ## Modules
 - `core` (KMP: jvm, wasmJs, ios) — models + `BoardPatch` diff/apply/rebase + wire DTOs (`api/Api.kt`,
