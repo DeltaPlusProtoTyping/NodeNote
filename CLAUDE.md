@@ -4,7 +4,7 @@ Forked from NodeNote (`Documents\nodeNote`) at 42b2845. Now a shared, node-based
 for process improvement at the machine shop: per-node chats, 1–10 importance on key details,
 issue status tracking, Obsidian vault mirror. Desktop + browser clients, one server over Tailscale.
 
-- Remote `origin` = github.com/DeltaPlusProtoTyping/NodeNote-Boards (private, default branch
+- Remote `origin` = github.com/DeltaPlusProtoTyping/NodeNote-Boards (public, default branch
   `boards-and-chat`); `upstream` = NodeNote on GitHub, fetch-only (push disabled).
 - Releases: push a `v*` tag; `.github/workflows/release.yml` builds the MSI/DMG/DEB (server and
   browser version built in, `-PwithWeb`) plus `NodeNote-Server-<tag>.zip` onto a GitHub Release.
