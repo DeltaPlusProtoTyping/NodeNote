@@ -60,3 +60,12 @@ actual fun setPageTitle(title: String) = Unit
 actual fun reloadPage(): Boolean = false
 
 actual fun reloadWhenHidden(canReload: () -> Boolean) = Unit
+
+actual fun deviceStore(): com.nodenote.local.DeviceStore = object : com.nodenote.local.DeviceStore {
+    override fun read(key: String): String? = ProjectStorage.readPrefs("device-" + key)
+    override fun write(key: String, value: String): Boolean = ProjectStorage.writePrefs("device-" + key, value)
+}
+
+actual suspend fun bundledDictionary(): String? = null
+
+actual fun startServerOnThisComputer(serverUrl: String) = Unit

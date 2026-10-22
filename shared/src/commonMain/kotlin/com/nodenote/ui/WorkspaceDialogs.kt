@@ -101,6 +101,10 @@ fun SettingsDialog(workspace: Workspace) {
     }
 
     ModalCard(title = "Settings", onDismiss = { workspace.settingsOpen = false }, width = 460.dp) {
+        if (session.onThisDevice) {
+            DeviceSettings(workspace)
+            return@ModalCard
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Signed in as ", fontSize = 13.sp, color = TextSecondary)
             Text(session.userName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = authorColor(session.userName))
@@ -179,6 +183,69 @@ fun SettingsDialog(workspace: Workspace) {
         session.serverInfo?.let { info ->
             Text("Obsidian vault on the server: ${info.vaultPath}", fontSize = 11.sp, color = TextFaint)
         }
+
+        PanelCaption("Keep boards on this device instead")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "No server or account, just you. The server's boards stay on the server.",
+                fontSize = 11.sp,
+                color = TextFaint,
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+            )
+            CompactOutlinedButton("Use this device", onClick = {
+                workspace.settingsOpen = false
+                session.useThisDevice()
+            })
+        }
+    }
+}
+
+/** Settings while the boards are kept on this device: the name on your messages, and the way to a server. */
+@Composable
+private fun DeviceSettings(workspace: Workspace) {
+    val session = workspace.session
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf(session.userName) }
+    var server by remember { mutableStateOf(session.serverUrl) }
+    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+    Text(
+        "Your boards are kept on this device: no server, no account. Export a board to keep a copy elsewhere.",
+        fontSize = 12.sp,
+        color = TextSecondary,
+    )
+    PanelCaption("Your name (on your messages and cards)")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) { LoginField(name, { name = it }) }
+        Spacer(Modifier.width(6.dp))
+        CompactOutlinedButton("Rename", onClick = {
+            scope.launch {
+                val error = session.renameOnThisDevice(name)
+                message = (error ?: "Renamed") to (error != null)
+            }
+        })
+    }
+    message?.let { (text, isError) ->
+        Text(text, fontSize = 12.sp, color = if (isError) com.nodenote.theme.DangerRed else com.nodenote.theme.SuccessGreen)
+    }
+
+    PanelCaption("Use a server instead")
+    Text(
+        "To share boards with others and mirror them into Obsidian. The boards on this device stay here.",
+        fontSize = 11.sp,
+        color = TextFaint,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (!isWebPlatform) {
+            Box(Modifier.weight(1f)) { LoginField(server, { server = it }) }
+            Spacer(Modifier.width(6.dp))
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        CompactOutlinedButton(if (isWebPlatform) "Sign in to this site's server" else "Connect", onClick = {
+            workspace.settingsOpen = false
+            session.useServer(if (isWebPlatform) session.serverUrl else server)
+        })
     }
 }
 

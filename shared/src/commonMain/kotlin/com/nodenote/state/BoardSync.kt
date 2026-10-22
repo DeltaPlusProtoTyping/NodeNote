@@ -97,6 +97,11 @@ class BoardSync(private val state: AppState, private val session: Session, val b
                 return true
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: com.nodenote.net.BoardMissingException) {
+                // Same as a server's 404, for boards on this device.
+                job = null
+                state.boardMissing()
+                return false
             } catch (e: ClientRequestException) {
                 if (e.response.status == HttpStatusCode.NotFound) {
                     // A tab remembered from before (deleted board, other server): drop it quietly.

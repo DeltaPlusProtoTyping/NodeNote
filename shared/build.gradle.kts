@@ -81,6 +81,16 @@ kotlin {
     }
 }
 
+// The spell checker's word list, shipped next to the browser app: boards kept on the device
+// have no server to ask for it (the desktop app has it inside the built-in server).
+val webDictionary = tasks.register<Copy>("webDictionary") {
+    from(rootProject.file("server/src/main/resources/dict")) { include("en_US.txt") }
+    into(layout.buildDirectory.dir("generated/webDictionary/dict"))
+}
+kotlin.sourceSets.named("wasmJsMain") {
+    resources.srcDir(webDictionary.map { it.destinationDir.parentFile })
+}
+
 compose.desktop {
     application {
         mainClass = "com.nodenote.MainKt"
@@ -105,11 +115,13 @@ compose.desktop {
                 perUserInstall = true
                 dirChooser = true    // let the user pick the install folder in the wizard
                 upgradeUuid = "ea9ab37e-fc40-4600-85e2-a809fc7e14c0"
+                iconFile.set(project.file("icons/nodenote.ico"))
             }
             linux {
                 // Debian package ids are lowercase by convention; jpackage wants a maintainer.
                 packageName = "nodenote"
                 debMaintainer = "benpauza@gmail.com"
+                iconFile.set(project.file("icons/nodenote.png"))
             }
             macOS {
                 bundleID = "com.nodenote.app"

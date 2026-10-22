@@ -24,9 +24,12 @@ kotlin {
         commonMain.dependencies {
             api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
             api("org.jetbrains.kotlinx:kotlinx-datetime:0.6.2")
+            // Waiting for changes on boards kept on the device (local/DeviceBoards).
+            api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
         }
     }
 }

@@ -39,6 +39,13 @@ object LocalServer {
         }
     }
 
+    /** True when something already listens at [serverUrl] on this computer (a NodeNote server started some other way). */
+    fun isRunningAt(serverUrl: String): Boolean {
+        val uri = runCatching { URI(serverUrl.trim()) }.getOrNull() ?: return false
+        if (uri.host?.lowercase() !in setOf("localhost", "127.0.0.1")) return false
+        return !portFree(if (uri.port > 0) uri.port else 80)
+    }
+
     fun stop() {
         running?.stop(gracePeriodMillis = 500, timeoutMillis = 3_000)
         running = null

@@ -153,6 +153,13 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
                 )
             }
             if (!setup) Text("Forgot your password? Whoever runs this server can reset it.", fontSize = 11.sp, color = TextFaint)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "No server? Keep your boards on this device instead",
+                fontSize = 12.sp,
+                color = Accent,
+                modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { session.useThisDevice() }.padding(vertical = 4.dp),
+            )
         }
     }
 }

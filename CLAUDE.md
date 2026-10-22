@@ -30,6 +30,21 @@ JAVA_HOME/JDK 17).
 - Desktop: `gradlew :shared:run`. MSI: `gradlew :shared:packageMsi`.
 - Test with scratch `--data`/`--vault` dirs, never the real `~/.nodenote-server` or vault.
 
+## Where boards live: on this device, or on a server
+- `Session.mode` (`StorageMode`, pref `storage_mode.txt`): **Device** = no server, no account,
+  boards in `core/.../local/DeviceBoards.kt` (same rules as `server/BoardStore`, saved through a
+  `DeviceStore`: desktop files `~/.nodenote/device/`, browser localStorage `nodenote.device.*`,
+  iOS documents); **Server** = `ApiClient`. Both implement `net/BoardApi`, so BoardSync, chats and
+  the UI are the same code either way. Never delete in DeviceBoards (archive/tombstones only); a
+  failed save throws `DeviceSaveException` and changes nothing, so BoardSync keeps and retries it.
+- First launch: a device signed in to a server stays on it; the browser starts at its server's
+  sign-in ("Keep your boards on this device instead" below it); desktop picks Server only if a
+  NodeNote server already runs at its address (`main.kt`), else Device. Open tabs are remembered
+  per mode. Ben's PC, phone and browser are Server.
+- Phone install = the browser app as a PWA: `wasmJsMain/resources/manifest.webmanifest`, `sw.js`
+  (network-first for page/app.js, cache-first for hashed wasm, never `/api/`), icons from
+  `tools/make_icons.py`. The spell list ships next to the web app (`webDictionary` task) for Device.
+
 ## Sync model (don't break it)
 Clients never upload whole boards. `BoardSync` sends `BoardDiff.diff(syncedProject, project)` with
 the base rev; server applies (idempotent upsert/delete by id) and returns the merged board when the

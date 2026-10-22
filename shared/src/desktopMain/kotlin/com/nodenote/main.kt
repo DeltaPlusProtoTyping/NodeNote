@@ -21,7 +21,14 @@ import com.nodenote.ui.handleShortcut
  * built-in server first, so an install works by itself — see [LocalServer].
  */
 fun main() {
-    LocalServer.startIfNeeded(ClientPrefs.serverUrl.ifBlank { defaultServerUrl() })
+    val serverUrl = ClientPrefs.serverUrl.ifBlank { defaultServerUrl() }
+    // The very first time: keep using a server if this computer already has one running (or
+    // signed in to one before); otherwise the boards live on this computer, no server needed.
+    if (ClientPrefs.storageMode.isBlank()) {
+        val serverHere = ClientPrefs.sessionToken.isNotBlank() || LocalServer.isRunningAt(serverUrl)
+        ClientPrefs.storageMode = if (serverHere) "server" else "device"
+    }
+    if (ClientPrefs.storageMode == "server") LocalServer.startIfNeeded(serverUrl)
     desktopApp()
 }
 

@@ -54,8 +54,8 @@ fun HomeView(workspace: Workspace, modifier: Modifier = Modifier) {
             }
             Text(
                 "Braindump boards for process improvement. Map the shop as nodes, chat under each node, " +
-                    "rate the key details 1–10, and track issues from open to solved. Everything is mirrored " +
-                    "into the Obsidian vault on the server.",
+                    "rate what matters 1–12, and track issues from open to solved." +
+                    if (session.onThisDevice) "" else " Everything is mirrored into the Obsidian vault on the server.",
                 fontSize = 13.sp,
                 color = TextSecondary,
                 lineHeight = 19.sp,
@@ -67,7 +67,14 @@ fun HomeView(workspace: Workspace, modifier: Modifier = Modifier) {
                 CompactOutlinedButton("Import NodeNote .json", onClick = { workspace.importBoardFromFile() }, modifier = Modifier.height(32.dp))
             }
 
-            if (session.connection == ConnectionState.Offline) {
+            if (session.onThisDevice) {
+                Text(
+                    "Your boards are kept on this device. Settings can move you to a server to share them.",
+                    fontSize = 12.sp,
+                    color = TextFaint,
+                    lineHeight = 17.sp,
+                )
+            } else if (session.connection == ConnectionState.Offline) {
                 Text(
                     "Can't reach the server at ${session.serverUrl}. Start it with `gradlew :server:run` " +
                         "(or check Tailscale), or change the address in Settings.",

@@ -4,10 +4,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.nodenote.api.ServerInfo
+import com.nodenote.local.DeviceBoards
 import com.nodenote.net.ApiClient
+import com.nodenote.net.BoardApi
+import com.nodenote.net.DeviceApi
 import com.nodenote.spell.SpellChecker
 import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.defaultServerUrl
+import com.nodenote.storage.deviceStore
+import com.nodenote.storage.isWebPlatform
+import com.nodenote.storage.startServerOnThisComputer
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
@@ -16,6 +22,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/** Where this app keeps its boards: on this device (no server, no account) or on a NodeNote server. */
+enum class StorageMode(val pref: String) { Device("device"), Server("server") }
 
 enum class ConnectionState(val label: String) {
     Connecting("Connecting…"),
@@ -39,18 +48,90 @@ class Session {
 
     val scope: CoroutineScope = MainScope()
 
-    /** The signed-in account name — the author of everything posted from here. Blank when signed out. */
-    var userName by mutableStateOf(ClientPrefs.userName)
+    /**
+     * Where the boards live; chosen in Settings and remembered. The first time: an app
+     * already signed in to a server stays on it, the browser version starts at its server's
+     * sign-in (with "use on this device" one tap away), and anything else starts on this device.
+     */
+    var mode by mutableStateOf(initialMode())
+        private set
+
+    /** Who writes the messages and cards: the signed-in account, or the name set for this device. Blank when signed out. */
+    var userName by mutableStateOf(if (mode == StorageMode.Device) deviceName() else ClientPrefs.userName)
         private set
 
     var serverUrl by mutableStateOf(ClientPrefs.serverUrl.ifBlank { defaultServerUrl() })
         private set
 
-    var api by mutableStateOf(ApiClient(serverUrl).also { it.token = ClientPrefs.sessionToken.ifBlank { null } })
+    private val device: DeviceApi by lazy { DeviceApi(DeviceBoards(deviceStore())) { userName } }
+
+    var api: BoardApi by mutableStateOf(if (mode == StorageMode.Device) device else serverClient())
         private set
 
-    var signedIn by mutableStateOf(ClientPrefs.sessionToken.isNotBlank() && ClientPrefs.userName.isNotBlank())
+    var signedIn by mutableStateOf(
+        mode == StorageMode.Device || (ClientPrefs.sessionToken.isNotBlank() && ClientPrefs.userName.isNotBlank()),
+    )
         private set
+
+    val onThisDevice: Boolean get() = mode == StorageMode.Device
+
+    private fun serverClient() = ApiClient(serverUrl).also { it.token = ClientPrefs.sessionToken.ifBlank { null } }
+
+    private fun deviceName() = ClientPrefs.deviceUserName.ifBlank { "Me" }
+
+    private fun initialMode(): StorageMode {
+        StorageMode.entries.firstOrNull { it.pref == ClientPrefs.storageMode }?.let { return it }
+        val mode = if (ClientPrefs.sessionToken.isNotBlank() || isWebPlatform) StorageMode.Server else StorageMode.Device
+        ClientPrefs.storageMode = mode.pref
+        return mode
+    }
+
+    /** From now on, boards are kept on this device: no server, no sign-in. The server's boards stay where they are. */
+    fun useThisDevice() {
+        if (mode == StorageMode.Device) return
+        ClientPrefs.storageMode = StorageMode.Device.pref
+        mode = StorageMode.Device
+        userName = deviceName()
+        api = device
+        serverInfo = null
+        firstWebBuild = null
+        updateAvailable = false
+        signedIn = true
+        markOnline()
+    }
+
+    /** From now on, boards are on the server at [url] (sign in there next). This device's boards stay on it. */
+    fun useServer(url: String) {
+        ClientPrefs.storageMode = StorageMode.Server.pref
+        mode = StorageMode.Server
+        userName = ClientPrefs.userName
+        val sameServer = url.trim().trimEnd('/').ifBlank { defaultServerUrl() } == serverUrl
+        if (sameServer && ClientPrefs.sessionToken.isNotBlank() && userName.isNotBlank()) {
+            // Back to the server this device was signed in to: that sign-in still holds.
+            startServerOnThisComputer(serverUrl)
+            api = serverClient()
+            connection = ConnectionState.Connecting
+            signedIn = true
+        } else {
+            updateServerUrl(url)
+        }
+    }
+
+    /** Renames the one user of this device; their cards and messages follow. Null on success, else what went wrong. */
+    suspend fun renameOnThisDevice(newName: String): String? {
+        val name = newName.trim()
+        if (name.isEmpty()) return "Type a name"
+        return try {
+            api.changeUsername("", name)
+            ClientPrefs.deviceUserName = name
+            userName = name
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.message ?: "Couldn't rename"
+        }
+    }
 
     var connection by mutableStateOf(ConnectionState.Connecting)
         private set
@@ -201,6 +282,7 @@ class Session {
         ClientPrefs.serverUrl = if (cleaned == defaultServerUrl()) "" else cleaned
         serverUrl = cleaned.ifBlank { defaultServerUrl() }
         api.close()
+        startServerOnThisComputer(serverUrl) // desktop: the built-in one, when that's this computer
         api = ApiClient(serverUrl)
         ClientPrefs.sessionToken = ""
         signedIn = false

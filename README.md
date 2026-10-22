@@ -1,12 +1,20 @@
 # NodeNote — braindump boards for process improvement
 
-A shared, node-based workspace for two efficiency engineers at a machine shop. Map the shop
-(machines, processes, quoting, customers, problems) as a graph of **nodes**; every node has its
-own **chat**. Dump what you know, rate the **key details 1–10**, track **issues and improvements**
-from *Open* to *Solved*, and have everything mirrored into an **Obsidian vault** as linked notes.
+A node-based workspace for mapping and improving a business. Map the shop (machines, processes,
+quoting, customers, problems) as a graph of **nodes**; every node has its own **chat**. Dump what
+you know, rate what matters **1–12** (a card's size is its importance), track **issues and
+improvements** from *Open* to *Solved*.
 
-Runs as a **desktop app** (Windows/macOS/Linux) and in any **browser** — both talk to one small
-server you host on your own PC and reach over **Tailscale**.
+Two ways to keep your boards, switchable any time in **Settings**:
+
+- **On this device** (the default for a new install): no server, no account. Boards and chats are
+  saved on the computer or phone itself as you work. Good for one person.
+- **On a server**: share boards live with others, sign in from any device, and have everything
+  mirrored into an **Obsidian vault**. The server is one small program on a PC you keep on, reached
+  over **Tailscale**; the desktop app has one built in.
+
+Runs as a **desktop app** (Windows/macOS/Linux) and in any **browser**, and installs on a phone
+from the browser (*Add to Home Screen*) to open like an app, offline too.
 
 ```
  desktop app ──┐                                    ┌─► SQLite (source of truth)
@@ -39,18 +47,24 @@ Undo/redo still works locally.
 
 ## Install
 
-Download the installer for your computer from this repository's **Releases** page (Windows
-`.msi`, macOS `.dmg`, Linux `.deb`) and run it. NodeNote then runs entirely on that computer:
+**Computer:** download the installer from this repository's **Releases** page (Windows `.msi`,
+macOS `.dmg`, Linux `.deb`) and run it. It opens straight to your boards, kept on this computer in
+`~/.nodenote/device` (each board's previous version is kept beside it, so a save cut short can't
+lose it). If a NodeNote server already runs on the computer, the app uses that instead.
 
-- the app starts its own server when it opens and stops it when it closes; it only listens on
-  this computer, so nothing is shared unless you choose to (see *Share it over Tailscale*);
-- your boards live in `~/.nodenote-server` (backed up on every start and daily), mirrored as
-  Markdown into `~/Documents/NodeNote Vault`;
-- the first time, it asks you to create your account (the first account on a new server is made
-  right on the sign-in screen; everyone after that is added in Settings).
+**Phone (iPhone or Android):** open the NodeNote page in the browser (Safari on iPhone, iOS 18.2+),
+then *Share → Add to Home Screen* (iPhone) or *Install app* (Android). It opens like an app and
+works offline; boards are kept on the phone. Opened from a NodeNote server's address, it offers
+that server's sign-in first, with *Keep your boards on this device instead* right below.
 
-If a NodeNote server is already running on the computer (port 8870), the app simply uses it, and
-the **Server** field on the sign-in screen points the app at someone else's server instead.
+**Moving to a server later:** *Settings → Use a server instead* (or back with *Use this device*).
+Each place keeps its own boards; switching never moves or deletes any. To bring a board along,
+*Export* it as NodeNote `.json` and *Import* it on the other side.
+
+**Using a server:** the desktop app starts its built-in server when you choose *Use a server* with
+the address of this computer; the boards then live in `~/.nodenote-server` (backed up on every
+start and daily), mirrored into `~/Documents/NodeNote Vault`. A new server's sign-in screen offers
+to create its first account; everyone after that is added in Settings.
 
 For an always-on server without the app (a PC that serves the whole team), take
 `NodeNote-Server-<version>.zip` from the same release, unzip it and run `bin/server`

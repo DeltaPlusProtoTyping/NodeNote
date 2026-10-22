@@ -2,7 +2,13 @@ package com.nodenote.storage
 
 import java.awt.FileDialog
 import java.awt.Frame
+import com.nodenote.LocalServer
+import com.nodenote.local.DeviceStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Desktop file access using AWT's native [FileDialog].
@@ -93,3 +99,31 @@ actual fun setPageTitle(title: String) = Unit
 actual fun reloadPage(): Boolean = false
 
 actual fun reloadWhenHidden(canReload: () -> Boolean) = Unit
+
+actual fun deviceStore(): DeviceStore = FileDeviceStore(File(System.getProperty("user.home"), ".nodenote/device"))
+
+/** A file per key; written to a temporary file first and swapped in, so a crash never leaves half a file. */
+private class FileDeviceStore(private val dir: File) : DeviceStore {
+    override fun read(key: String): String? = try {
+        File(dir, key).takeIf { it.isFile }?.readText()
+    } catch (e: Exception) {
+        null
+    }
+
+    override fun write(key: String, value: String): Boolean = try {
+        dir.mkdirs()
+        val tmp = File(dir, "$key.tmp")
+        tmp.writeText(value)
+        Files.move(tmp.toPath(), File(dir, key).toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        true
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/** The word list comes with the built-in server's files. */
+actual suspend fun bundledDictionary(): String? = withContext(Dispatchers.IO) {
+    ProjectStorage::class.java.getResourceAsStream("/dict/en_US.txt")?.use { it.readBytes().decodeToString() }
+}
+
+actual fun startServerOnThisComputer(serverUrl: String) = LocalServer.startIfNeeded(serverUrl)

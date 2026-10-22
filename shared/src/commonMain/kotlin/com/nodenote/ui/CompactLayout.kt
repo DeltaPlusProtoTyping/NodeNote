@@ -177,7 +177,7 @@ private fun CompactTopBar(workspace: Workspace) {
     }
     if (session.connection == ConnectionState.Offline) {
         Text(
-            "Offline — messages will retry",
+            if (session.onThisDevice) "Couldn't save on this phone yet — will retry" else "Offline — messages will retry",
             fontSize = 11.sp,
             color = TextFaint,
             modifier = Modifier.fillMaxWidth().background(PanelBackground).padding(horizontal = 12.dp, vertical = 2.dp),

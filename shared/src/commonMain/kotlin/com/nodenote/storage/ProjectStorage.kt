@@ -1,5 +1,7 @@
 package com.nodenote.storage
 
+import com.nodenote.local.DeviceStore
+
 /**
  * Platform seam for the few things that differ between the desktop app and
  * the browser app: small preference files, and letting the user pick or save a
@@ -60,3 +62,12 @@ expect fun reloadPage(): Boolean
  * interrupting anyone. No-op elsewhere.
  */
 expect fun reloadWhenHidden(canReload: () -> Boolean)
+
+/** Where boards kept "on this device" are saved (see com.nodenote.local.DeviceBoards). */
+expect fun deviceStore(): DeviceStore
+
+/** The spell checker's word list shipped with the app, for boards on this device; null if this build has none. */
+expect suspend fun bundledDictionary(): String?
+
+/** Desktop: starts the built-in server when [serverUrl] is this computer and nothing runs there yet. Elsewhere: nothing. */
+expect fun startServerOnThisComputer(serverUrl: String)

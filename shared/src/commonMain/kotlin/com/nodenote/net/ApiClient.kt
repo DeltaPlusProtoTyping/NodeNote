@@ -39,12 +39,12 @@ import io.ktor.serialization.kotlinx.json.json
  * endpoint list). One instance per server address; the HTTP engine comes from
  * the platform (OkHttp on desktop, fetch in the browser).
  */
-class ApiClient(serverUrl: String) {
+class ApiClient(serverUrl: String) : BoardApi {
 
-    val baseUrl: String = serverUrl.trim().trimEnd('/')
+    override val baseUrl: String = serverUrl.trim().trimEnd('/')
 
     /** Session token from [login]; sent as a bearer token on every call. */
-    var token: String? = null
+    override var token: String? = null
 
     private val http = HttpClient {
         expectSuccess = true
@@ -55,58 +55,58 @@ class ApiClient(serverUrl: String) {
         defaultRequest { token?.let { header(HttpHeaders.Authorization, "Bearer $it") } }
     }
 
-    suspend fun info(): ServerInfo = http.get("$baseUrl/api/info").body()
+    override suspend fun info(): ServerInfo = http.get("$baseUrl/api/info").body()
 
     /** The spell checker's word list (one lowercase word per line). The version busts the week-long cache when it changes. */
-    suspend fun dictionary(): String = http.get("$baseUrl/api/dictionary") { parameter("v", DICTIONARY_VERSION) }.bodyAsText()
+    override suspend fun dictionary(): String = http.get("$baseUrl/api/dictionary") { parameter("v", DICTIONARY_VERSION) }.bodyAsText()
 
     // ---- account ----
 
-    suspend fun login(username: String, password: String): LoginResponse =
+    override suspend fun login(username: String, password: String): LoginResponse =
         http.post("$baseUrl/api/auth/login") { json(LoginRequest(username, password)) }.body()
 
     /** A fresh server's first account (refused once any account exists). */
-    suspend fun setup(username: String, password: String): LoginResponse =
+    override suspend fun setup(username: String, password: String): LoginResponse =
         http.post("$baseUrl/api/auth/setup") { json(LoginRequest(username, password)) }.body()
 
-    suspend fun logout() {
+    override suspend fun logout() {
         http.post("$baseUrl/api/auth/logout")
     }
 
-    suspend fun me(): AccountInfo = http.get("$baseUrl/api/auth/me").body()
+    override suspend fun me(): AccountInfo = http.get("$baseUrl/api/auth/me").body()
 
-    suspend fun changePassword(current: String, new: String) {
+    override suspend fun changePassword(current: String, new: String) {
         http.post("$baseUrl/api/auth/password") { json(ChangePasswordRequest(current, new)) }
     }
 
-    suspend fun changeUsername(password: String, newUsername: String): LoginResponse =
+    override suspend fun changeUsername(password: String, newUsername: String): LoginResponse =
         http.post("$baseUrl/api/auth/username") { json(ChangeUsernameRequest(password, newUsername)) }.body()
 
-    suspend fun boards(includeArchived: Boolean): List<BoardSummary> =
+    override suspend fun boards(includeArchived: Boolean): List<BoardSummary> =
         http.get("$baseUrl/api/boards") { parameter("archived", includeArchived) }.body()
 
-    suspend fun createBoard(request: CreateBoardRequest): BoardSummary =
+    override suspend fun createBoard(request: CreateBoardRequest): BoardSummary =
         http.post("$baseUrl/api/boards") { json(request) }.body()
 
-    suspend fun board(id: String): BoardSnapshot = http.get("$baseUrl/api/boards/$id").body()
+    override suspend fun board(id: String): BoardSnapshot = http.get("$baseUrl/api/boards/$id").body()
 
-    suspend fun setArchived(id: String, archived: Boolean): BoardSummary =
+    override suspend fun setArchived(id: String, archived: Boolean): BoardSummary =
         http.patch("$baseUrl/api/boards/$id/meta") { json(BoardMetaUpdate(archived = archived)) }.body()
 
-    suspend fun patch(id: String, request: PatchRequest): PatchResponse =
+    override suspend fun patch(id: String, request: PatchRequest): PatchResponse =
         http.post("$baseUrl/api/boards/$id/patch") { json(request) }.body()
 
-    suspend fun messages(boardId: String, since: Long): List<Message> =
+    override suspend fun messages(boardId: String, since: Long): List<Message> =
         http.get("$baseUrl/api/boards/$boardId/messages") { parameter("since", since) }.body()
 
-    suspend fun postMessage(message: Message): Message =
+    override suspend fun postMessage(message: Message): Message =
         http.post("$baseUrl/api/boards/${message.boardId}/messages") { json(message) }.body()
 
-    suspend fun updateMessage(id: String, update: MessageUpdate): Message =
+    override suspend fun updateMessage(id: String, update: MessageUpdate): Message =
         http.patch("$baseUrl/api/messages/$id") { json(update) }.body()
 
     /** Long-poll: returns as soon as the board or its chat changes, or after [waitSeconds]. */
-    suspend fun sync(boardId: String, rev: Long, seq: Long, waitSeconds: Int = 25): SyncResponse =
+    override suspend fun sync(boardId: String, rev: Long, seq: Long, waitSeconds: Int): SyncResponse =
         http.get("$baseUrl/api/boards/$boardId/sync") {
             parameter("rev", rev)
             parameter("seq", seq)
@@ -114,7 +114,7 @@ class ApiClient(serverUrl: String) {
             timeout { requestTimeoutMillis = (waitSeconds + 15) * 1000L }
         }.body()
 
-    fun close() = http.close()
+    override fun close() = http.close()
 
     private inline fun <reified T> io.ktor.client.request.HttpRequestBuilder.json(body: T) {
         contentType(ContentType.Application.Json)

@@ -1,5 +1,9 @@
 package com.nodenote.storage
 
+import com.nodenote.local.DeviceStore
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -118,5 +122,30 @@ private fun reloadWhenHiddenJs(canReload: () -> Boolean): Unit = js(
     const check = () => { if (document.hidden && canReload()) window.location.reload(); };
     document.addEventListener('visibilitychange', check);
     check();
+}""",
+)
+
+actual fun deviceStore(): DeviceStore = object : DeviceStore {
+    override fun read(key: String): String? = localStorageGet("nodenote.device." + key)
+    override fun write(key: String, value: String): Boolean = localStorageTrySet("nodenote.device." + key, value)
+}.also { askToKeepStorage() }
+
+/** Next to the app, put there by the build (see shared/build.gradle.kts). */
+actual suspend fun bundledDictionary(): String? = runCatching {
+    HttpClient().use { it.get(pageBaseUrl() + "/dict/en_US.txt").bodyAsText() }
+}.getOrNull()?.takeIf { it.length > 1000 }
+
+actual fun startServerOnThisComputer(serverUrl: String) = Unit
+
+private fun localStorageTrySet(key: String, value: String): Boolean = js(
+    """{
+    try { window.localStorage.setItem(key, value); return true; } catch (e) { return false; }
+}""",
+)
+
+/** Asks the browser not to clear this site's storage on its own (an installed app usually gets this). */
+private fun askToKeepStorage(): Unit = js(
+    """{
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 }""",
 )

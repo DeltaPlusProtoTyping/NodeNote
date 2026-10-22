@@ -216,6 +216,7 @@ private fun io.ktor.server.routing.Route.serveWebApp(config: ServerConfig) {
         return when (name.substringAfterLast('.', "").lowercase()) {
             "wasm" -> ContentType.Application.Wasm
             "mjs" -> ContentType.Application.JavaScript
+            "webmanifest" -> ContentType("application", "manifest+json")
             else -> ContentType.defaultForFilePath(name)
         }
     }

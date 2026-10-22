@@ -192,8 +192,13 @@ private fun ConnectionIndicator(workspace: Workspace) {
         Box(Modifier.size(8.dp).background(color, RoundedCornerShape(4.dp)))
         Spacer(Modifier.width(6.dp))
         Text(
-            if (session.connection == ConnectionState.Online) workspace.focused.syncStatus.label.takeIf { workspace.focused.isLoaded } ?: "Online"
-            else session.connection.label,
+            when {
+                session.onThisDevice && session.connection == ConnectionState.Offline -> "Not saved yet"
+                session.onThisDevice -> "On this device"
+                session.connection == ConnectionState.Online ->
+                    workspace.focused.syncStatus.label.takeIf { workspace.focused.isLoaded } ?: "Online"
+                else -> session.connection.label
+            },
             fontSize = 11.sp,
             color = TextSecondary,
         )

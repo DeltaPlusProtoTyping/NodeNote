@@ -37,11 +37,28 @@ object ClientPrefs {
             ProjectStorage.writePrefs("server_url.txt", value.trim())
         }
 
-    var openBoardIds: List<String>
-        get() = decode(ProjectStorage.readPrefs("open_boards.json"), idList) ?: emptyList()
+    /** "device" (boards kept on this device) or "server"; blank until it's been decided (see Session). */
+    var storageMode: String
+        get() = ProjectStorage.readPrefs("storage_mode.txt")?.trim().orEmpty()
         set(value) {
-            ProjectStorage.writePrefs("open_boards.json", json.encodeToString(idList, value))
+            ProjectStorage.writePrefs("storage_mode.txt", value)
         }
+
+    /** The one user's name for boards on this device (no account), kept apart from the server sign-in name. */
+    var deviceUserName: String
+        get() = ProjectStorage.readPrefs("device_user.txt")?.trim().orEmpty()
+        set(value) {
+            ProjectStorage.writePrefs("device_user.txt", value.trim())
+        }
+
+    /** Tabs open last time, separately for each place boards live (their ids don't mix). */
+    var openBoardIds: List<String>
+        get() = decode(ProjectStorage.readPrefs(openBoardsFile()), idList) ?: emptyList()
+        set(value) {
+            ProjectStorage.writePrefs(openBoardsFile(), json.encodeToString(idList, value))
+        }
+
+    private fun openBoardsFile() = if (storageMode == "device") "open_boards_device.json" else "open_boards.json"
 
     /** Presentation mode (private nodes hidden). Kept per device so a reload mid-meeting doesn't reveal them. */
     var presenting: Boolean

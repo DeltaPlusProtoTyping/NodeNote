@@ -34,7 +34,8 @@ fun App(
         if (!session.signedIn) {
             LoginScreen(session, modifier)
         } else {
-            val workspace = remember { Workspace(session) }
+            // A new place for the boards (this device ↔ a server) starts a fresh set of tabs.
+            val workspace = remember(session.api) { Workspace(session) }
             DisposableEffect(workspace) {
                 onWorkspace(workspace)
                 onDispose {
