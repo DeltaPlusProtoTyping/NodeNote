@@ -7,6 +7,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.nio.file.Files
+import java.nio.file.Path
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -31,11 +33,17 @@ class TooManyAttemptsException(message: String) : RuntimeException(message)
  *  - failed sign-ins are throttled per username and overall, and each failure is slowed down.
  *
  * Sessions last until signed out or unused for [SESSION_IDLE_DAYS] days.
+ *
+ * Group sign-in (for testing with a group): with a group password set in [groupPasswordFile]
+ * (a PBKDF2 hash, written by the `grouppass` command), anyone who knows it joins under a name
+ * of their choosing. Those members have no password of their own ([GROUP_MEMBER] in place of
+ * a hash), so they can't sign in the ordinary way, and real accounts' names can't be joined as.
  */
 class Accounts(
     private val db: Database,
     private val clock: () -> Long = ::nowMillis,
     private val failureDelayMillis: Long = 600,
+    private val groupPasswordFile: Path? = null,
 ) {
     private val random = SecureRandom()
     private val failures = ConcurrentHashMap<String, MutableList<Long>>()
@@ -74,6 +82,53 @@ class Accounts(
 
     suspend fun logout(token: String) = io { db.deleteSession(hashToken(token)) }
 
+    // ---- group sign-in ----
+
+    /** True when a group password is set, so the sign-in screen asks for a name and that password. */
+    suspend fun groupSignIn(): Boolean = io { groupHash() != null }
+
+    /** Signs in as [name] with the group's password, making [name] a member the first time. */
+    suspend fun join(name: String, password: String): LoginResponse {
+        val hash = io { groupHash() } ?: throw ForbiddenException("This server has no group sign-in")
+        val key = "group:" + name.trim().lowercase()
+        checkThrottle(key)
+        if (!verifyPassword(password, hash)) {
+            recordFailure(key)
+            delay(failureDelayMillis)
+            throw UnauthorizedException("Wrong group password")
+        }
+        val wanted = validateUsername(name)
+        val canonical = joinLock.withLock {
+            val row = io { db.user(wanted) }
+            when {
+                row == null -> io { db.insertUser(wanted, GROUP_MEMBER, clock()) }.let { wanted }
+                row.second == GROUP_MEMBER -> row.first
+                else -> throw ForbiddenException("\"${row.first}\" is someone's account: pick a different name")
+            }
+        }
+        failures.remove(key)
+        val token = newToken()
+        io { db.insertSession(hashToken(token), canonical, clock()) }
+        return LoginResponse(token, canonical)
+    }
+
+    /** Sets the group password (null turns group sign-in off). Members' sessions are kept. */
+    fun setGroupPassword(password: String?) {
+        val file = groupPasswordFile ?: throw IllegalStateException("No group password file")
+        if (password == null) {
+            Files.deleteIfExists(file)
+            return
+        }
+        validatePassword(password)
+        Files.createDirectories(file.parent)
+        Files.writeString(file, hashPassword(password))
+    }
+
+    private val joinLock = Mutex()
+
+    private fun groupHash(): String? =
+        groupPasswordFile?.takeIf { Files.isRegularFile(it) }?.let { runCatching { Files.readString(it).trim() }.getOrNull() }?.takeIf { it.isNotEmpty() }
+
     // ---- account changes (the signed-in user, re-confirming their password) ----
 
     suspend fun changePassword(username: String, token: String, current: String, new: String) {
@@ -99,8 +154,11 @@ class Accounts(
 
     private val setupLock = Mutex()
 
-    /** True while the server has no accounts at all (a fresh install). */
-    suspend fun needsSetup(): Boolean = io { db.users().isEmpty() }
+    /**
+     * True while the server has no accounts at all (a fresh install). A server with a group
+     * password never needs one: people join instead, and nobody gets to claim the first account.
+     */
+    suspend fun needsSetup(): Boolean = io { db.users().isEmpty() && groupHash() == null }
 
     /**
      * A fresh install's first account, made from the sign-in screen and signed straight in.
@@ -182,6 +240,9 @@ class Accounts(
 
     companion object {
         const val MIN_PASSWORD_LENGTH = 8
+
+        /** Stands in for a password hash on group members: matches no password, so ordinary sign-in never works for them. */
+        const val GROUP_MEMBER = "group-member"
         private const val ITERATIONS = 210_000
         private const val SESSION_IDLE_DAYS = 60L
         private const val DAY_MS = 24L * 60 * 60 * 1000

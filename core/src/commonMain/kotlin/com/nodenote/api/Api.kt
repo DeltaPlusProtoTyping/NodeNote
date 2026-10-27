@@ -38,6 +38,8 @@ data class ServerInfo(
     val webBuild: String? = null,
     /** No accounts yet (a fresh install): the sign-in screen offers to create the first one instead. */
     val needsSetup: Boolean = false,
+    /** A group password is set: anyone who knows it joins with just their name (see [JoinRequest]). */
+    val groupSignIn: Boolean = false,
 )
 
 @Serializable
@@ -115,6 +117,7 @@ val ApiJson: Json = Json {
 //
 //   POST /api/auth/login             LoginRequest -> LoginResponse   (no token needed)
 //   POST /api/auth/setup             LoginRequest -> LoginResponse   (no token; only while there are no accounts)
+//   POST /api/auth/join              JoinRequest -> LoginResponse    (no token; only with a group password set)
 //   POST /api/auth/logout            -> 204
 //   GET  /api/auth/me                -> AccountInfo
 //   POST /api/auth/password          ChangePasswordRequest -> 204
@@ -128,6 +131,14 @@ data class LoginRequest(val username: String, val password: String)
 
 @Serializable
 data class LoginResponse(val token: String, val username: String)
+
+/**
+ * Group sign-in, for a server shared with a group of testers: the group's one password and the
+ * name to work under. A new name becomes a member on the spot; a name that belongs to a real
+ * account (one with its own password) is refused, so nobody can join as someone else.
+ */
+@Serializable
+data class JoinRequest(val name: String, val password: String)
 
 @Serializable
 data class AccountInfo(val username: String)

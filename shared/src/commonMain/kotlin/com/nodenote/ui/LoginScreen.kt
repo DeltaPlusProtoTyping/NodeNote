@@ -59,7 +59,8 @@ import kotlinx.coroutines.launch
 /**
  * Full-window sign-in. Desktop can also change the server address here (the browser always
  * uses its own). A fresh server with no accounts yet (a new install) gets "create your
- * account" instead, which makes the first account and signs straight in.
+ * account" instead, which makes the first account and signs straight in. A server shared with
+ * a group asks for a name and the group's password (accounts can still sign in below it).
  */
 @Composable
 fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
@@ -73,6 +74,8 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
     // Fresh install? Asked again whenever the server address changes.
     LaunchedEffect(session.api) { session.checkServer() }
     val setup = session.serverInfo?.needsSetup == true
+    var withAccount by remember { mutableStateOf(false) }
+    val group = !setup && !withAccount && session.serverInfo?.groupSignIn == true
 
     fun submit() {
         if (busy || username.isBlank() || password.isEmpty()) return
@@ -84,7 +87,11 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
         busy = true
         error = null
         scope.launch {
-            error = if (setup) session.setUp(username, password) else session.signIn(username, password)
+            error = when {
+                setup -> session.setUp(username, password)
+                group -> session.join(username, password)
+                else -> session.signIn(username, password)
+            }
             busy = false
             if (error != null) {
                 password = ""
@@ -116,15 +123,24 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
                     fontSize = 11.sp,
                     color = TextFaint,
                 )
+            } else if (group) {
+                Text("Join the group's boards", fontSize = 13.sp, color = TextSecondary)
+                Text("Your name goes on the cards and messages you add.", fontSize = 11.sp, color = TextFaint)
             } else {
                 Text("Sign in to your boards", fontSize = 13.sp, color = TextSecondary)
             }
             session.signInNotice?.let { Text(it, fontSize = 12.sp, color = TextSecondary) }
             Spacer(Modifier.height(4.dp))
 
-            FieldLabel(if (setup) "Your name" else "Username")
+            FieldLabel(if (setup || group) "Your name" else "Username")
             LoginField(username, { username = it }, onEnter = ::submit)
-            FieldLabel(if (setup) "Password (8+ characters)" else "Password")
+            FieldLabel(
+                when {
+                    setup -> "Password (8+ characters)"
+                    group -> "Group password"
+                    else -> "Password"
+                },
+            )
             LoginField(password, { password = it }, onEnter = ::submit, secret = true)
             if (setup) {
                 FieldLabel("Password again")
@@ -147,12 +163,24 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
                         setup && busy -> "Creating…"
                         setup -> "Create account"
                         busy -> "Signing in…"
+                        group -> "Join"
                         else -> "Sign in"
                     },
                     fontSize = 13.sp,
                 )
             }
-            if (!setup) Text("Forgot your password? Whoever runs this server can reset it.", fontSize = 11.sp, color = TextFaint)
+            if (session.serverInfo?.groupSignIn == true && !setup) {
+                Text(
+                    if (group) "Have an account? Sign in with it" else "Join with the group password instead",
+                    fontSize = 12.sp,
+                    color = Accent,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable {
+                        withAccount = !withAccount
+                        error = null
+                    }.padding(vertical = 4.dp),
+                )
+            }
+            if (!setup && !group) Text("Forgot your password? Whoever runs this server can reset it.", fontSize = 11.sp, color = TextFaint)
             Spacer(Modifier.height(6.dp))
             Text(
                 "No server? Keep your boards on this device instead",

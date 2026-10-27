@@ -4,6 +4,7 @@ import com.nodenote.api.AccountInfo
 import com.nodenote.api.ApiJson
 import com.nodenote.api.ChangePasswordRequest
 import com.nodenote.api.ChangeUsernameRequest
+import com.nodenote.api.JoinRequest
 import com.nodenote.api.LoginRequest
 import com.nodenote.api.LoginResponse
 import com.nodenote.api.BoardMetaUpdate
@@ -68,6 +69,9 @@ class ApiClient(serverUrl: String) : BoardApi {
     /** A fresh server's first account (refused once any account exists). */
     override suspend fun setup(username: String, password: String): LoginResponse =
         http.post("$baseUrl/api/auth/setup") { json(LoginRequest(username, password)) }.body()
+
+    override suspend fun join(name: String, password: String): LoginResponse =
+        http.post("$baseUrl/api/auth/join") { json(JoinRequest(name, password)) }.body()
 
     override suspend fun logout() {
         http.post("$baseUrl/api/auth/logout")

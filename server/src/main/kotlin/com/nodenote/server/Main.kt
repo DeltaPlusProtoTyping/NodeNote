@@ -45,8 +45,8 @@ import kotlin.system.exitProcess
 private val log = LoggerFactory.getLogger("com.nodenote.server.Main")
 
 fun main(args: Array<String>) {
-    // Admin commands: `users`, `adduser <name> <password>`, `passwd <name> <password>`
-    // (plus the usual --data flag). They work on the database directly.
+    // Admin commands: `users`, `adduser <name> <password>`, `passwd <name> <password>`,
+    // `grouppass <password>|off` (plus the usual --data flag). They work on the database directly.
     val command = args.takeWhile { !it.startsWith("--") }
     val flags = args.drop(command.size).toTypedArray()
     val config = try {
@@ -74,7 +74,7 @@ fun main(args: Array<String>) {
 
 private fun runAdminCommand(command: List<String>, config: ServerConfig): Int = try {
     Database(config.databaseFile).use { db ->
-        val accounts = Accounts(db)
+        val accounts = Accounts(db, groupPasswordFile = config.groupPasswordFile)
         when (command.first()) {
             "users" -> accounts.users().forEach(::println)
             "adduser" -> {
@@ -87,7 +87,17 @@ private fun runAdminCommand(command: List<String>, config: ServerConfig): Int = 
                 accounts.resetPassword(command[1], command[2])
                 println("Password reset for ${command[1]} (their other sessions were signed out)")
             }
-            else -> throw IllegalArgumentException("Unknown command: ${command.first()} (users | adduser | passwd)")
+            "grouppass" -> {
+                require(command.size == 2) { "Usage: grouppass <password> (or: grouppass off)" }
+                if (command[1] == "off") {
+                    accounts.setGroupPassword(null)
+                    println("Group sign-in is off (members already signed in stay signed in until they sign out)")
+                } else {
+                    accounts.setGroupPassword(command[1])
+                    println("Group sign-in is on: anyone with this password joins with their name")
+                }
+            }
+            else -> throw IllegalArgumentException("Unknown command: ${command.first()} (users | adduser | passwd | grouppass)")
         }
     }
     0
@@ -109,7 +119,7 @@ fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long =
     config.rememberVault()
     val backups = Backups(database, config.dataDir.resolve("backups")).also { it.start() }
     val store = BoardStore(database)
-    val accounts = Accounts(database)
+    val accounts = Accounts(database, groupPasswordFile = config.groupPasswordFile)
     val vault = VaultWriter(config.vaultDir, store, vaultDebounceMillis)
     store.addListener(vault::schedule)
     vault.rebuildAllAsync()

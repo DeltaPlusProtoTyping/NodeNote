@@ -28,6 +28,8 @@ interface BoardApi {
     suspend fun dictionary(): String
     suspend fun login(username: String, password: String): LoginResponse
     suspend fun setup(username: String, password: String): LoginResponse
+    /** Group sign-in: the group's password and the name to work under. */
+    suspend fun join(name: String, password: String): LoginResponse
     suspend fun logout()
     suspend fun me(): AccountInfo
     suspend fun changePassword(current: String, new: String)
@@ -59,6 +61,7 @@ class DeviceApi(private val boards: DeviceBoards, private val userName: () -> St
     override suspend fun dictionary(): String = bundledDictionary() ?: throw IllegalStateException("No word list on this device")
     override suspend fun login(username: String, password: String): LoginResponse = noAccounts()
     override suspend fun setup(username: String, password: String): LoginResponse = noAccounts()
+    override suspend fun join(name: String, password: String): LoginResponse = noAccounts()
     override suspend fun logout() = Unit
     override suspend fun me() = AccountInfo(userName())
     override suspend fun changePassword(current: String, new: String): Unit = noAccounts()

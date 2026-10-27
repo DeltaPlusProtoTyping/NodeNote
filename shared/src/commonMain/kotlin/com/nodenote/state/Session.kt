@@ -213,6 +213,9 @@ class Session {
     /** Creates a fresh server's first account and signs in with it; null on success, else a message to show. */
     suspend fun setUp(username: String, password: String): String? = account { api.setup(username.trim(), password) }
 
+    /** Joins with the group's password under [name] (servers set up for a group); null on success, else a message to show. */
+    suspend fun join(name: String, password: String): String? = account { api.join(name.trim(), password) }
+
     private suspend fun account(call: suspend () -> com.nodenote.api.LoginResponse): String? = try {
         val result = call()
         applyAccount(result.username, result.token)

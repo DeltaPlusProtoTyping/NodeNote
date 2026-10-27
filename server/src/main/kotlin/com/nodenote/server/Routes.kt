@@ -8,6 +8,7 @@ import com.nodenote.api.ChangeUsernameRequest
 import com.nodenote.api.LoginRequest
 import com.nodenote.api.LoginResponse
 import com.nodenote.api.CreateBoardRequest
+import com.nodenote.api.JoinRequest
 import com.nodenote.api.MessageUpdate
 import com.nodenote.api.PatchRequest
 import com.nodenote.api.ServerInfo
@@ -55,6 +56,10 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
                 val request = call.receive<LoginRequest>()
                 call.respond(accounts.setUp(request.username, request.password))
             }
+            post("/join") {
+                val request = call.receive<JoinRequest>()
+                call.respond(accounts.join(request.name, request.password))
+            }
             post("/logout") {
                 accounts.logout(call.token())
                 call.respond(HttpStatusCode.NoContent)
@@ -88,7 +93,10 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
             val identity = call.request.headers["Tailscale-User-Name"]?.takeIf { it.isNotBlank() }
                 ?: call.request.headers["Tailscale-User-Login"]?.takeIf { it.isNotBlank() }
             call.respond(
-                ServerInfo("NodeNote", SERVER_VERSION, config.vaultDir.toString(), identity, webBuild(config), accounts.needsSetup()),
+                ServerInfo(
+                    "NodeNote", SERVER_VERSION, config.vaultDir.toString(), identity, webBuild(config),
+                    needsSetup = accounts.needsSetup(), groupSignIn = accounts.groupSignIn(),
+                ),
             )
         }
 
@@ -178,7 +186,7 @@ class RequireSignInConfig {
 }
 
 /** Paths under /api that work without signing in. */
-private val OpenPaths = setOf("/api/info", "/api/auth/login", "/api/auth/setup")
+private val OpenPaths = setOf("/api/info", "/api/auth/login", "/api/auth/setup", "/api/auth/join")
 
 /**
  * Every /api call except [OpenPaths] needs `Authorization: Bearer <token>` from

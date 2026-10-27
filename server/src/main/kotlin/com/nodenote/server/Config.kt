@@ -27,6 +27,9 @@ data class ServerConfig(
 ) {
     val databaseFile: Path get() = dataDir.resolve("nodenote.db")
 
+    /** The group password's hash, when group sign-in is on (see [Accounts]). */
+    val groupPasswordFile: Path get() = dataDir.resolve("group-password.txt")
+
     /** Notes the vault folder next to the data, for servers later started without `--vault`. */
     fun rememberVault() {
         runCatching {
