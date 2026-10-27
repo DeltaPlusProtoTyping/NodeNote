@@ -1,6 +1,9 @@
 package com.nodenote.server
 
 import com.nodenote.api.ApiJson
+import com.nodenote.api.BoardMetaUpdate
+import com.nodenote.api.CreateBoardRequest
+import com.nodenote.model.Project
 import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -40,13 +43,16 @@ import kotlinx.serialization.SerializationException
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.system.exitProcess
 
 private val log = LoggerFactory.getLogger("com.nodenote.server.Main")
 
 fun main(args: Array<String>) {
     // Admin commands: `users`, `adduser <name> <password>`, `passwd <name> <password>`,
-    // `grouppass <password>|off` (plus the usual --data flag). They work on the database directly.
+    // `grouppass <password>|off`, `importboard <board.json> [name]`,
+    // `archiveboard <id>` (plus the usual --data flag).
+    // They work on the database directly, so stop the server first.
     val command = args.takeWhile { !it.startsWith("--") }
     val flags = args.drop(command.size).toTypedArray()
     val config = try {
@@ -97,7 +103,19 @@ private fun runAdminCommand(command: List<String>, config: ServerConfig): Int = 
                     println("Group sign-in is on: anyone with this password joins with their name")
                 }
             }
-            else -> throw IllegalArgumentException("Unknown command: ${command.first()} (users | adduser | passwd | grouppass)")
+            "importboard" -> {
+                require(command.size in 2..3) { "Usage: importboard <board.json> [name]" }
+                val project = ApiJson.decodeFromString<Project>(Files.readString(Path.of(command[1])))
+                val made = runBlocking { BoardStore(db).create(CreateBoardRequest(command.getOrElse(2) { project.name }, project)) }
+                println("Imported \"${made.name}\" (${project.nodes.size} cards) as board ${made.id}")
+            }
+            "archiveboard" -> {
+                require(command.size == 2) { "Usage: archiveboard <board id>" }
+                val board = runBlocking { BoardStore(db).updateMeta(command[1], BoardMetaUpdate(archived = true)) }
+                    ?: throw IllegalArgumentException("No board ${command[1]}")
+                println("Archived \"${board.name}\"")
+            }
+            else -> throw IllegalArgumentException("Unknown command: ${command.first()} (users | adduser | passwd | grouppass | importboard | archiveboard)")
         }
     }
     0
