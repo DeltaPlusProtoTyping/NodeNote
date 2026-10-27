@@ -69,7 +69,12 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 - Public: Tailscale Funnel `https://master.impala-bass.ts.net:10000/nodenote/` → 127.0.0.1:8870
   (Funnel ports are only 443/8443/10000, all used; `/` on :10000 is another app on 8092). The web
   client derives its API base from the page path, so the app works under a path prefix.
-- Auth: every /api call except /api/info and /api/auth/login needs a bearer session. Accounts are
+- Testers: a second server instance with **group sign-in** (`Accounts.join`: name + one group password,
+  hash in `<data>/group-password.txt`, set with `MainKt grouppass <pw>|off`; members can't use normal
+  sign-in, real accounts' names can't be joined as). `C:\Users\Benjamin\Apps\nodenote-test-schedule.ps1`:
+  task "NodeNote Test Server", port 8873, data `~/.nodenote-test-server`, Funnel `/nodenote-test`.
+  Deploy server changes to both. The phone apps (`Documents\NodeNote-Swift`, `NodeNote-Android`) join it.
+- Auth: every /api call except /api/info and /api/auth/login|setup|join needs a bearer session. Accounts are
   managed in the app (Settings) or via `MainKt users|adduser|passwd`. Never test with real accounts.
 - Git Bash rewrites args like `/nodenote` into `C:/Program Files/Git/nodenote` — run
   `tailscale serve/funnel --set-path` from PowerShell.
