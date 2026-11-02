@@ -74,6 +74,10 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
   sign-in, real accounts' names can't be joined as). `C:\Users\Benjamin\Apps\nodenote-test-schedule.ps1`:
   task "NodeNote Test Server", port 8873, data `~/.nodenote-test-server`, Funnel `/nodenote-test`.
   Deploy server changes to both. The phone apps (`Documents\NodeNote-Swift`, `NodeNote-Android`) join it.
+  The deploy script copies `NodeNote-Android\NodeNote-test.apk` to `<data>/downloads/NodeNote.apk` (public at
+  `/download/NodeNote.apk`; the sign-in page links it when present). Team features (all clients): member names
+  (`/api/auth/members`), Activity (`activity` table, schema v3), Earlier versions (board_history; a restore is a
+  normal patch with `restoredFrom`), replies (`/api/replies`) for notifications.
 - Auth: every /api call except /api/info and /api/auth/login|setup|join needs a bearer session. Accounts are
   managed in the app (Settings) or via `MainKt users|adduser|passwd`. Never test with real accounts.
 - Git Bash rewrites args like `/nodenote` into `C:/Program Files/Git/nodenote` — run
