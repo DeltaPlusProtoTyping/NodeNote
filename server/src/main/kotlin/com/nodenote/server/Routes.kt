@@ -9,6 +9,7 @@ import com.nodenote.api.LoginRequest
 import com.nodenote.api.LoginResponse
 import com.nodenote.api.CreateBoardRequest
 import com.nodenote.api.JoinRequest
+import com.nodenote.api.MembersRequest
 import com.nodenote.api.MessageUpdate
 import com.nodenote.api.PatchRequest
 import com.nodenote.api.ServerInfo
@@ -60,6 +61,9 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
                 val request = call.receive<JoinRequest>()
                 call.respond(accounts.join(request.name, request.password))
             }
+            post("/members") {
+                call.respond(accounts.members(call.receive<MembersRequest>().password))
+            }
             post("/logout") {
                 accounts.logout(call.token())
                 call.respond(HttpStatusCode.NoContent)
@@ -96,6 +100,7 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
                 ServerInfo(
                     "NodeNote", SERVER_VERSION, config.vaultDir.toString(), identity, webBuild(config),
                     needsSetup = accounts.needsSetup(), groupSignIn = accounts.groupSignIn(),
+                    androidApp = java.nio.file.Files.isRegularFile(config.androidApk),
                 ),
             )
         }
@@ -122,7 +127,14 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
                     val body = ApiJson.parseToJsonElement(call.receiveText()).jsonObject
                     val request = ApiJson.decodeFromJsonElement(PatchRequest.serializer(), body)
                     val sent = body["patch"] as? JsonObject
-                    call.respond(store.patch(call.boardId(), request, sent) ?: boardNotFound(call.boardId()))
+                    call.respond(store.patch(call.boardId(), request, sent, author = call.user()) ?: boardNotFound(call.boardId()))
+                }
+                get("/history") {
+                    call.respond(store.history(call.boardId()) ?: boardNotFound(call.boardId()))
+                }
+                get("/history/{entry}") {
+                    val entry = call.parameters["entry"]?.toLongOrNull() ?: throw BadRequestException("History entry must be a number")
+                    call.respond(store.historySnapshot(call.boardId(), entry) ?: throw NotFoundException("No such saved copy"))
                 }
                 get("/messages") {
                     val since = call.longParam("since", 0)
@@ -140,6 +152,13 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
                     call.respond(response ?: boardNotFound(call.boardId()))
                 }
             }
+        }
+
+        get("/activity") {
+            call.respond(store.activity(accounts.people()))
+        }
+        get("/replies") {
+            call.respond(store.replies(call.user(), call.longParam("since", 0)))
         }
 
         patch("/messages/{id}") {
@@ -186,7 +205,7 @@ class RequireSignInConfig {
 }
 
 /** Paths under /api that work without signing in. */
-private val OpenPaths = setOf("/api/info", "/api/auth/login", "/api/auth/setup", "/api/auth/join")
+private val OpenPaths = setOf("/api/info", "/api/auth/login", "/api/auth/setup", "/api/auth/join", "/api/auth/members")
 
 /**
  * Every /api call except [OpenPaths] needs `Authorization: Bearer <token>` from

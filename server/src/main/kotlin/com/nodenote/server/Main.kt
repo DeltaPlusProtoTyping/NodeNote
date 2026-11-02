@@ -38,6 +38,10 @@ import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.routing.routing
+import io.ktor.server.routing.get
+import io.ktor.server.response.header
+import io.ktor.server.response.respondFile
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -235,6 +239,13 @@ fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long =
 
     routing {
         apiRoutes(store, vault, config, accounts)
+        // The Android app for testers: no sign-in (it's how they get the app in the first place).
+        get("/download/NodeNote.apk") {
+            val apk = config.androidApk.toFile()
+            if (!apk.isFile) throw NotFoundException("No Android app on this server")
+            call.response.header(HttpHeaders.ContentDisposition, "attachment; filename=\"NodeNote.apk\"")
+            call.respondFile(apk)
+        }
         serveWebApp(config)
     }
 }

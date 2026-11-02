@@ -112,6 +112,19 @@ class Accounts(
         return LoginResponse(token, canonical)
     }
 
+    /** The names already joined, for someone who knows the group password (so they can pick theirs). */
+    suspend fun members(password: String): List<String> {
+        val hash = io { groupHash() } ?: throw ForbiddenException("This server has no group sign-in")
+        val key = "group-members"
+        checkThrottle(key)
+        if (!verifyPassword(password, hash)) {
+            recordFailure(key)
+            delay(failureDelayMillis)
+            throw UnauthorizedException("Wrong group password")
+        }
+        return io { db.people(GROUP_MEMBER) }.filter { it.groupMember }.sortedByDescending { it.lastSeen }.map { it.name }
+    }
+
     /** Sets the group password (null turns group sign-in off). Members' sessions are kept. */
     fun setGroupPassword(password: String?) {
         val file = groupPasswordFile ?: throw IllegalStateException("No group password file")
@@ -187,6 +200,9 @@ class Accounts(
     }
 
     fun users(): List<String> = db.users()
+
+    /** Everyone with an account, for the activity view. */
+    suspend fun people(): List<Database.PersonRow> = io { db.people(GROUP_MEMBER) }
 
     // ---- helpers ----
 

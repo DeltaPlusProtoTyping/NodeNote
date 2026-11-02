@@ -30,6 +30,9 @@ data class ServerConfig(
     /** The group password's hash, when group sign-in is on (see [Accounts]). */
     val groupPasswordFile: Path get() = dataDir.resolve("group-password.txt")
 
+    /** The Android app testers download (`/download/NodeNote.apk`), when it's been put there. */
+    val androidApk: Path get() = dataDir.resolve("downloads").resolve("NodeNote.apk")
+
     /** Notes the vault folder next to the data, for servers later started without `--vault`. */
     fun rememberVault() {
         runCatching {

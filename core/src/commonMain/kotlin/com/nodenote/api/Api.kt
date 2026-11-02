@@ -19,7 +19,12 @@ import kotlinx.serialization.json.Json
  *   POST   /api/boards/{id}/messages Message -> Message         (server stamps createdAt + seq)
  *   PATCH  /api/messages/{id}  MessageUpdate -> Message
  *   GET    /api/boards/{id}/sync?rev=R&seq=S&wait=25 -> SyncResponse   (long-poll)
+ *   GET    /api/boards/{id}/history          -> List<HistoryEntry>  (newest first)
+ *   GET    /api/boards/{id}/history/{entry}  -> BoardSnapshot       (the board as it was then)
+ *   GET    /api/activity                     -> Activity            (who's here, who changed what)
+ *   GET    /api/replies?since=S              -> List<Reply>         (others' chats on my cards, seq > S)
  *   POST   /api/vault/rebuild                -> 204
+ *   GET    /download/NodeNote.apk            (no sign-in; when ServerInfo.androidApp)
  *   (accounts: see the end of this file)
  */
 
@@ -40,6 +45,8 @@ data class ServerInfo(
     val needsSetup: Boolean = false,
     /** A group password is set: anyone who knows it joins with just their name (see [JoinRequest]). */
     val groupSignIn: Boolean = false,
+    /** The Android app can be downloaded from `/download/NodeNote.apk` (next to the web app). */
+    val androidApp: Boolean = false,
 )
 
 @Serializable
@@ -72,7 +79,45 @@ data class BoardMetaUpdate(val archived: Boolean? = null)
 
 /** [baseRev] is the server revision the patch was computed against. */
 @Serializable
-data class PatchRequest(val baseRev: Long, val author: String, val patch: BoardPatch)
+data class PatchRequest(
+    val baseRev: Long,
+    val author: String,
+    val patch: BoardPatch,
+    /**
+     * Set when the patch puts the board back the way it was at a [HistoryEntry] (its id): the
+     * server then keeps a copy of the board as it is now first, so the restore can be undone.
+     */
+    val restoredFrom: Long = 0,
+)
+
+/** One saved copy of a board (the server keeps one from before the first change in every 30 minutes). */
+@Serializable
+data class HistoryEntry(val id: Long, val rev: Long, val savedAt: Long, val cards: Int, val links: Int)
+
+/** Who is on the server and what they did lately. */
+@Serializable
+data class Activity(val people: List<PersonActivity>, val recent: List<ActivityItem>)
+
+/** [lastSeen]: when one of their devices last talked to the server (to the hour); 0 = never. */
+@Serializable
+data class PersonActivity(val name: String, val joinedAt: Long, val lastSeen: Long, val lastChange: Long = 0)
+
+/** [what] is a short description, e.g. "added 2 cards, moved 3" or "chatted on Parts Take Too Long". */
+@Serializable
+data class ActivityItem(val boardId: String, val boardName: String, val author: String, val at: Long, val what: String)
+
+/** Someone else's chat on a card I made, own, or chatted on. */
+@Serializable
+data class Reply(
+    val boardId: String,
+    val boardName: String,
+    val nodeId: String,
+    val nodeTitle: String,
+    val author: String,
+    val text: String,
+    val seq: Long,
+    val createdAt: Long,
+)
 
 /**
  * [project] is null when the new server board is exactly base + patch (the
@@ -118,6 +163,7 @@ val ApiJson: Json = Json {
 //   POST /api/auth/login             LoginRequest -> LoginResponse   (no token needed)
 //   POST /api/auth/setup             LoginRequest -> LoginResponse   (no token; only while there are no accounts)
 //   POST /api/auth/join              JoinRequest -> LoginResponse    (no token; only with a group password set)
+//   POST /api/auth/members           MembersRequest -> List<String>  (no token; the group's member names)
 //   POST /api/auth/logout            -> 204
 //   GET  /api/auth/me                -> AccountInfo
 //   POST /api/auth/password          ChangePasswordRequest -> 204
@@ -139,6 +185,10 @@ data class LoginResponse(val token: String, val username: String)
  */
 @Serializable
 data class JoinRequest(val name: String, val password: String)
+
+/** The group password; answered with the names already joined, so people can pick theirs. */
+@Serializable
+data class MembersRequest(val password: String)
 
 @Serializable
 data class AccountInfo(val username: String)

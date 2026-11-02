@@ -140,7 +140,7 @@ class Database(file: Path) : AutoCloseable {
 
     companion object {
         /** Bump together with a new entry in [migrations]. */
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
 
         /** version → SQL that upgrades version-1 → version. Version 1 is the baseline above. */
         private val migrations: Map<Int, List<String>> = mapOf(
@@ -158,6 +158,22 @@ class Database(file: Path) : AutoCloseable {
                     created_at INTEGER NOT NULL,
                     last_seen INTEGER NOT NULL
                 )""",
+            ),
+            // v3: who changed what (one row per person per board per stretch of work; see BoardStore.recordChange).
+            3 to listOf(
+                """CREATE TABLE IF NOT EXISTS activity(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    board_id TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    started_at INTEGER NOT NULL,
+                    at INTEGER NOT NULL,
+                    added INTEGER NOT NULL DEFAULT 0,
+                    changed INTEGER NOT NULL DEFAULT 0,
+                    removed INTEGER NOT NULL DEFAULT 0,
+                    linked INTEGER NOT NULL DEFAULT 0,
+                    restored_to INTEGER NOT NULL DEFAULT 0
+                )""",
+                "CREATE INDEX IF NOT EXISTS activity_at ON activity(at)",
             ),
         )
 
@@ -324,6 +340,60 @@ class Database(file: Path) : AutoCloseable {
         setString(4, json)
     }
 
+    /** Saved copies of board [boardId], newest first (rowid, rev, saved_at, json). */
+    @Synchronized
+    fun history(boardId: String, limit: Int): List<HistoryRow> = queryWith(
+        "SELECT rowid, rev, saved_at, json FROM board_history WHERE board_id = ? ORDER BY saved_at DESC LIMIT ?",
+        { setString(1, boardId); setInt(2, limit) },
+    ) { HistoryRow(it.getLong(1), it.getLong(2), it.getLong(3), it.getString(4)) }
+
+    @Synchronized
+    fun historyEntry(boardId: String, entry: Long): HistoryRow? = queryWith(
+        "SELECT rowid, rev, saved_at, json FROM board_history WHERE board_id = ? AND rowid = ?",
+        { setString(1, boardId); setLong(2, entry) },
+    ) { HistoryRow(it.getLong(1), it.getLong(2), it.getLong(3), it.getString(4)) }.singleOrNull()
+
+    // ---- activity ----
+
+    @Synchronized
+    fun insertActivity(a: ActivityRow): Long {
+        update(
+            "INSERT INTO activity(board_id, author, started_at, at, added, changed, removed, linked, restored_to) VALUES(?,?,?,?,?,?,?,?,?)",
+        ) { bindActivity(a) }
+        return query("SELECT last_insert_rowid()") { it.getLong(1) }.single()
+    }
+
+    @Synchronized
+    fun updateActivity(a: ActivityRow) = update(
+        "UPDATE activity SET board_id = ?, author = ?, started_at = ?, at = ?, added = ?, changed = ?, removed = ?, linked = ?, restored_to = ? WHERE id = ?",
+    ) {
+        bindActivity(a)
+        setLong(10, a.id)
+    }
+
+    private fun PreparedStatement.bindActivity(a: ActivityRow) {
+        setString(1, a.boardId); setString(2, a.author); setLong(3, a.startedAt); setLong(4, a.at)
+        setInt(5, a.added); setInt(6, a.changed); setInt(7, a.removed); setInt(8, a.linked); setLong(9, a.restoredTo)
+    }
+
+    @Synchronized
+    fun recentActivity(limit: Int): List<ActivityRow> = queryWith(
+        "SELECT id, board_id, author, started_at, at, added, changed, removed, linked, restored_to FROM activity ORDER BY at DESC LIMIT ?",
+        { setInt(1, limit) },
+    ) { ActivityRow(it.getLong(1), it.getString(2), it.getString(3), it.getLong(4), it.getLong(5), it.getInt(6), it.getInt(7), it.getInt(8), it.getInt(9), it.getLong(10)) }
+
+    /** Newest change per author (board edits only; chats come from the messages). */
+    @Synchronized
+    fun lastChangeByAuthor(): Map<String, Long> =
+        query("SELECT author, MAX(at) FROM activity GROUP BY author") { it.getString(1) to it.getLong(2) }.toMap()
+
+    /** Every account: (name, joined, is a group member, last seen on any device). */
+    @Synchronized
+    fun people(groupMarker: String): List<PersonRow> = query(
+        """SELECT u.username, u.created_at, u.password_hash, COALESCE((SELECT MAX(s.last_seen) FROM sessions s WHERE s.username = u.username), 0)
+           FROM users u ORDER BY u.username""",
+    ) { PersonRow(it.getString(1), it.getLong(2), it.getString(3) == groupMarker, it.getLong(4)) }
+
     // ---- messages ----
 
     @Synchronized
@@ -376,6 +446,23 @@ class Database(file: Path) : AutoCloseable {
 
     @Synchronized
     override fun close() = connection.close()
+
+    data class HistoryRow(val id: Long, val rev: Long, val savedAt: Long, val json: String)
+
+    data class ActivityRow(
+        val id: Long,
+        val boardId: String,
+        val author: String,
+        val startedAt: Long,
+        val at: Long,
+        val added: Int = 0,
+        val changed: Int = 0,
+        val removed: Int = 0,
+        val linked: Int = 0,
+        val restoredTo: Long = 0,
+    )
+
+    data class PersonRow(val name: String, val joinedAt: Long, val groupMember: Boolean, val lastSeen: Long)
 
     // ---- helpers ----
 

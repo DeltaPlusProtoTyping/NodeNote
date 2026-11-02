@@ -1,5 +1,11 @@
 package com.nodenote.server
 
+import com.nodenote.model.BoardPatch
+import com.nodenote.api.Reply
+import com.nodenote.api.PersonActivity
+import com.nodenote.api.HistoryEntry
+import com.nodenote.api.ActivityItem
+import com.nodenote.api.Activity
 import com.nodenote.api.ApiJson
 import com.nodenote.api.BoardMetaUpdate
 import com.nodenote.api.BoardSnapshot
@@ -170,7 +176,7 @@ class BoardStore(
      * [sent] is the patch JSON exactly as received; with it, fields an older client
      * didn't send are kept rather than reset (see [PatchMerge]).
      */
-    suspend fun patch(id: String, request: PatchRequest, sent: JsonObject? = null): PatchResponse? {
+    suspend fun patch(id: String, request: PatchRequest, sent: JsonObject? = null, author: String = request.author): PatchResponse? {
         val response = mutex.withLock {
             val state = boards[id] ?: return null
             val revBefore = state.rev
@@ -182,13 +188,16 @@ class BoardStore(
 
             val now = clock()
             // Cheap safety net against the other person deleting things: a snapshot of the
-            // board as it was before the first change in every 30-minute window.
-            if (now - state.lastHistoryAt >= HISTORY_INTERVAL_MS) {
+            // board as it was before the first change in every 30-minute window, and always
+            // before a restore (so the restore itself can be undone).
+            val restoredTo = if (request.restoredFrom > 0) io { db.historyEntry(id, request.restoredFrom) }?.savedAt ?: 0L else 0L
+            if (now - state.lastHistoryAt >= HISTORY_INTERVAL_MS || request.restoredFrom > 0) {
                 io { db.insertHistory(id, revBefore, now, encode(current)) }
                 state.lastHistoryAt = now
             }
             val rev = revBefore + 1
             io { db.updateBoardContent(id, next.name, encode(next), rev, now) }
+            recordChange(id, author, current, patch, now, restoredTo)
             state.project = next
             state.rev = rev
             state.updatedAt = now
@@ -197,6 +206,112 @@ class BoardStore(
         }
         notifyListeners(id)
         return response
+    }
+
+    // ---- history ----
+
+    /** The saved copies of board [id], newest first; null if the board is unknown. */
+    suspend fun history(id: String): List<HistoryEntry>? {
+        if (mutex.withLock { id !in boards }) return null
+        return io { db.history(id, HISTORY_LIST_LIMIT) }.mapNotNull { row ->
+            val project = decodeOrNull(row.json) ?: return@mapNotNull null
+            HistoryEntry(row.id, row.rev, row.savedAt, project.nodes.size, project.edges.size)
+        }
+    }
+
+    /** Board [id] as it was at history entry [entry], or null. */
+    suspend fun historySnapshot(id: String, entry: Long): BoardSnapshot? {
+        val row = io { db.historyEntry(id, entry) } ?: return null
+        val project = decodeOrNull(row.json) ?: return null
+        return BoardSnapshot(project.copy(id = id), row.rev)
+    }
+
+    // ---- activity ----
+
+    /** Edits by one person to one board within this long of each other count as one item. */
+    private val openActivity = HashMap<Pair<String, String>, Database.ActivityRow>()
+
+    /** Adds what [patch] did to [author]'s current item for this board. Caller holds the lock. */
+    private suspend fun recordChange(boardId: String, author: String, before: Project, patch: BoardPatch, now: Long, restoredTo: Long) {
+        if (author.isBlank()) return
+        val old = before.nodes.associateBy { it.id }
+        val added = patch.upsertNodes.count { it.id !in old }
+        val changed = patch.upsertNodes.count { it.id in old && old[it.id] != it } + (if (patch.name != null) 1 else 0)
+        val removed = patch.deleteNodes.count { it in old }
+        val edgeIds = before.edges.mapTo(HashSet()) { it.id }
+        val linked = patch.upsertEdges.count { it.id !in edgeIds }
+        if (added + changed + removed + linked == 0 && restoredTo == 0L) return
+        val key = boardId to author
+        val open = openActivity[key]
+        if (open != null && restoredTo == 0L && open.restoredTo == 0L && now - open.at < ACTIVITY_MERGE_MS) {
+            val row = open.copy(at = now, added = open.added + added, changed = open.changed + changed, removed = open.removed + removed, linked = open.linked + linked)
+            io { db.updateActivity(row) }
+            openActivity[key] = row
+        } else {
+            val row = Database.ActivityRow(0, boardId, author, now, now, added, changed, removed, linked, restoredTo)
+            val rowId = io { db.insertActivity(row) }
+            openActivity[key] = row.copy(id = rowId)
+        }
+    }
+
+    /** Who is on the server and the newest [limit] things they did, edits and chats together. */
+    suspend fun activity(people: List<Database.PersonRow>, limit: Int = 40): Activity {
+        val edits = io { db.recentActivity(limit) }
+        val lastEdit = io { db.lastChangeByAuthor() }
+        return mutex.withLock {
+            val live = boards.values.filter { !it.archived }
+            val chats = live.flatMap { b -> b.messages.values.filter { !it.deleted }.map { b to it } }
+            val items = edits.mapNotNull { a ->
+                val b = boards[a.boardId]?.takeIf { !it.archived } ?: return@mapNotNull null
+                ActivityItem(b.id, b.project.name, a.author, a.at, describe(a))
+            } + chats.map { (b, m) ->
+                val card = b.project.nodes.firstOrNull { it.id == m.nodeId }?.title?.trim().orEmpty()
+                val text = m.text.trim().replace('\n', ' ').let { if (it.length > 60) it.take(57) + "..." else it }
+                ActivityItem(b.id, b.project.name, m.author, m.createdAt, if (card.isEmpty()) "chatted: $text" else "chatted on $card: $text")
+            }
+            val lastChat = chats.groupBy { it.second.author.lowercase() }.mapValues { (_, v) -> v.maxOf { it.second.createdAt } }
+            Activity(
+                people = people.map { p ->
+                    val last = maxOf(lastEdit.entries.filter { it.key.equals(p.name, ignoreCase = true) }.maxOfOrNull { it.value } ?: 0L, lastChat[p.name.lowercase()] ?: 0L)
+                    PersonActivity(p.name, p.joinedAt, p.lastSeen, last)
+                }.sortedByDescending { maxOf(it.lastSeen, it.lastChange) },
+                recent = items.sortedByDescending { it.at }.take(limit),
+            )
+        }
+    }
+
+    private fun describe(a: Database.ActivityRow): String {
+        if (a.restoredTo > 0) return "put the board back to an earlier version"
+        fun n(count: Int, one: String, many: String = one + "s") = "$count ${if (count == 1) one else many}"
+        return buildList {
+            if (a.added > 0) add("added ${n(a.added, "card")}")
+            if (a.changed > 0) add("changed ${n(a.changed, "card")}")
+            if (a.removed > 0) add("removed ${n(a.removed, "card")}")
+            if (a.linked > 0) add("linked ${n(a.linked, "pair", "pairs")} of cards")
+        }.joinToString(", ").ifEmpty { "edited the board" }
+    }
+
+    // ---- replies ----
+
+    /**
+     * Other people's chats with seq > [since] on cards [user] made, owns or chatted on, oldest
+     * first. With [since] = 0, only the newest few (a device asking for the first time).
+     */
+    suspend fun replies(user: String, since: Long, limit: Int = 50): List<Reply> = mutex.withLock {
+        val me = user.lowercase()
+        val out = mutableListOf<Reply>()
+        for (b in boards.values) {
+            if (b.archived) continue
+            val mine = b.project.nodes.filter { it.createdBy.lowercase() == me || it.owner.lowercase() == me }.mapTo(HashSet()) { it.id }
+            b.messages.values.filter { !it.deleted && it.author.lowercase() == me }.mapTo(mine) { it.nodeId }
+            for (m in b.messages.values) {
+                if (m.seq <= since || m.deleted || m.author.lowercase() == me || m.nodeId !in mine) continue
+                val card = b.project.nodes.firstOrNull { it.id == m.nodeId } ?: continue
+                out += Reply(b.id, b.project.name, m.nodeId, card.title, m.author, m.text, m.seq, m.createdAt)
+            }
+        }
+        out.sortBy { it.seq }
+        if (since == 0L) out.takeLast(5) else out.takeLast(limit)
     }
 
     // ---- messages ----
@@ -396,11 +511,15 @@ class BoardStore(
 
     private fun encode(project: Project): String = ApiJson.encodeToString(Project.serializer(), project)
 
+    private fun decodeOrNull(json: String): Project? = runCatching { ApiJson.decodeFromString(Project.serializer(), json) }.getOrNull()
+
     /** JDBC is blocking; keep it off the request dispatcher. */
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 
     private companion object {
         val log = LoggerFactory.getLogger(BoardStore::class.java)
         const val HISTORY_INTERVAL_MS = 30 * 60 * 1000L
+        const val HISTORY_LIST_LIMIT = 200
+        const val ACTIVITY_MERGE_MS = 15 * 60 * 1000L
     }
 }
