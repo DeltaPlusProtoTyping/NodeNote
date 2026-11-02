@@ -52,3 +52,20 @@ async function dropOldWasm(cache, appJs) {
     if (WASM.test(name) && !current.has(name)) await cache.delete(key);
   }
 }
+
+// A reply notification shown through this worker (phones): bring the app forward and tell it
+// which one was tapped, so it opens that board.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const tag = event.notification.tag;
+  event.waitUntil((async () => {
+    const pages = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const page = pages[0];
+    if (page) {
+      await page.focus();
+      page.postMessage({ type: "nodenote-notification", tag: tag });
+    } else {
+      await self.clients.openWindow("./");
+    }
+  })());
+});

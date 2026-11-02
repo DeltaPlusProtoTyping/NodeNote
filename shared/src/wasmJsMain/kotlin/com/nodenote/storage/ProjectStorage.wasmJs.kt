@@ -149,3 +149,71 @@ private fun askToKeepStorage(): Unit = js(
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 }""",
 )
+
+/** See manifest.webmanifest: share_target opens "./?share_title=...&share_text=...&share_url=...". */
+actual fun takeSharedText(): String? = takeSharedTextJs()?.trim()?.takeIf { it.isNotEmpty() }
+
+private fun takeSharedTextJs(): String? = js(
+    """(() => {
+    const params = new URLSearchParams(window.location.search);
+    const keys = ['share_title', 'share_text', 'share_url'];
+    if (!keys.some((k) => params.has(k))) return null;
+    const title = (params.get('share_title') || '').trim();
+    const text = (params.get('share_text') || '').trim();
+    const url = (params.get('share_url') || '').trim();
+    keys.forEach((k) => params.delete(k));
+    const rest = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (rest ? '?' + rest : '') + window.location.hash);
+    // Apps fill these in differently (many put the link in the text): keep each part once.
+    const parts = [];
+    if (title && !text.startsWith(title)) parts.push(title);
+    if (text) parts.push(text);
+    if (url && !text.includes(url)) parts.push(url);
+    return parts.join('\n');
+})()""",
+)
+
+actual fun notificationPermission(): String = notificationPermissionJs()
+
+private fun notificationPermissionJs(): String = js("""(typeof Notification === 'undefined') ? '' : Notification.permission""")
+
+actual fun requestNotificationPermission(onResult: (String) -> Unit) = requestNotificationPermissionJs(onResult)
+
+private fun requestNotificationPermissionJs(onResult: (String) -> Unit): Unit = js(
+    """{
+    if (typeof Notification === 'undefined') { onResult(''); return; }
+    try {
+        Notification.requestPermission().then((p) => onResult(p), () => onResult(Notification.permission));
+    } catch (e) { onResult(Notification.permission); }
+}""",
+)
+
+actual fun showNotification(title: String, body: String, tag: String, onClick: () -> Unit): Boolean =
+    showNotificationJs(title, body, tag, onClick)
+
+private fun showNotificationJs(title: String, body: String, tag: String, onClick: () -> Unit): Boolean = js(
+    """(() => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return false;
+    const options = { body: body, tag: tag, icon: 'icons/icon-192.png' };
+    try {
+        const n = new Notification(title, options);
+        n.onclick = () => { window.focus(); n.close(); onClick(); };
+        return true;
+    } catch (e) {
+        // Phones only allow them through the service worker; its notificationclick (sw.js)
+        // focuses this page and posts the tag back here.
+        if (!navigator.serviceWorker) return false;
+        const clicks = window.nodenoteNotificationClicks || (window.nodenoteNotificationClicks = {});
+        if (!window.nodenoteNotificationListener) {
+            window.nodenoteNotificationListener = true;
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                const data = event.data || {};
+                if (data.type === 'nodenote-notification' && clicks[data.tag]) clicks[data.tag]();
+            });
+        }
+        clicks[tag] = onClick;
+        navigator.serviceWorker.getRegistration().then((r) => { if (r) r.showNotification(title, options); }).catch(() => {});
+        return true;
+    }
+})()""",
+)

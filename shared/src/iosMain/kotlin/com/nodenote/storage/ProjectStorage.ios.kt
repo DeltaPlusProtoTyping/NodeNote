@@ -69,3 +69,11 @@ actual fun deviceStore(): com.nodenote.local.DeviceStore = object : com.nodenote
 actual suspend fun bundledDictionary(): String? = null
 
 actual fun startServerOnThisComputer(serverUrl: String) = Unit
+
+actual fun takeSharedText(): String? = null
+
+actual fun notificationPermission(): String = ""
+
+actual fun requestNotificationPermission(onResult: (String) -> Unit) = onResult("")
+
+actual fun showNotification(title: String, body: String, tag: String, onClick: () -> Unit): Boolean = false

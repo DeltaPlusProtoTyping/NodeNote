@@ -71,3 +71,25 @@ expect suspend fun bundledDictionary(): String?
 
 /** Desktop: starts the built-in server when [serverUrl] is this computer and nothing runs there yet. Elsewhere: nothing. */
 expect fun startServerOnThisComputer(serverUrl: String)
+
+/**
+ * Browser: text shared into the installed app from another app (the manifest's share_target
+ * opens the page with it in the address), taken once and cleared from the address so a reload
+ * doesn't add it again. Null elsewhere, or when nothing was shared.
+ */
+expect fun takeSharedText(): String?
+
+/**
+ * System notifications: "granted", "default" (not asked yet), "denied", or "" where there are
+ * none (desktop for now, or a browser without the Notification API).
+ */
+expect fun notificationPermission(): String
+
+/** Asks to show notifications; [onResult] gets the answer (see [notificationPermission]). */
+expect fun requestNotificationPermission(onResult: (String) -> Unit)
+
+/**
+ * Shows a system notification ([tag] replaces an earlier one with the same tag); clicking it
+ * brings this window forward and calls [onClick]. False when it can't (not allowed, none here).
+ */
+expect fun showNotification(title: String, body: String, tag: String, onClick: () -> Unit): Boolean

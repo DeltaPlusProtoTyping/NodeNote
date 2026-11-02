@@ -83,6 +83,7 @@ fun TopBar(workspace: Workspace) {
             ToolbarButton("+ Board", onClick = { workspace.newBoardOpen = true })
             ToolbarButton("Import", onClick = { workspace.importBoardFromFile() })
             ExportMenuButton(workspace, enabled = loaded)
+            BoardMenuButton(workspace)
 
             ToolbarDivider()
 
@@ -172,6 +173,18 @@ private fun ExportMenuButton(workspace: Workspace, enabled: Boolean) {
                 text = { Text("Map as PDF, SVG or PNG…", fontSize = 12.sp) },
                 onClick = { menuOpen = false; workspace.focused.openExportDialog() },
             )
+        }
+    }
+}
+
+/** Board ▾ — Activity, Earlier versions, reply notifications, tips (see BoardMenuItems). */
+@Composable
+private fun BoardMenuButton(workspace: Workspace) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        ToolbarButton("Board", onClick = { menuOpen = true }, dropdown = true)
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            BoardMenuItems(workspace) { menuOpen = false }
         }
     }
 }

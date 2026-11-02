@@ -174,6 +174,7 @@ private fun ChatHeader(state: AppState, node: Node?) {
                 }
             }
         }
+        if (node != null) ConnectSuggestions(state, node)
         // Filters: importance floor, kind, text search.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf(0 to "All", 5 to "5+", 7 to "7+", 9 to "9+", 11 to "11+").forEach { (min, label) ->

@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,7 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -76,6 +81,21 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
     val setup = session.serverInfo?.needsSetup == true
     var withAccount by remember { mutableStateOf(false) }
     val group = !setup && !withAccount && session.serverInfo?.groupSignIn == true
+    // Group sign-in: the names already in the group, once the password is in (one ask per password).
+    var members by remember { mutableStateOf<List<String>>(emptyList()) }
+    var membersAskedFor by remember { mutableStateOf<String?>(null) }
+    val nameFocus = remember { FocusRequester() }
+
+    fun askMembers() {
+        if (!group || password.isEmpty() || password == membersAskedFor) return
+        val asked = password
+        membersAskedFor = asked
+        scope.launch {
+            // A wrong password just shows no names; Join says what's wrong.
+            val names = session.groupMembers(asked)
+            if (password == asked) members = names.orEmpty()
+        }
+    }
 
     fun submit() {
         if (busy || username.isBlank() || password.isEmpty()) return
@@ -132,16 +152,28 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
             session.signInNotice?.let { Text(it, fontSize = 12.sp, color = TextSecondary) }
             Spacer(Modifier.height(4.dp))
 
-            FieldLabel(if (setup || group) "Your name" else "Username")
-            LoginField(username, { username = it }, onEnter = ::submit)
-            FieldLabel(
-                when {
-                    setup -> "Password (8+ characters)"
-                    group -> "Group password"
-                    else -> "Password"
-                },
-            )
-            LoginField(password, { password = it }, onEnter = ::submit, secret = true)
+            if (group) {
+                // Password first: with it, the names already in the group can be offered.
+                FieldLabel("Group password")
+                LoginField(
+                    password,
+                    { password = it },
+                    onEnter = {
+                        askMembers()
+                        runCatching { nameFocus.requestFocus() }
+                    },
+                    secret = true,
+                    onFocusLost = ::askMembers,
+                )
+                FieldLabel("Your name")
+                LoginField(username, { username = it }, onEnter = ::submit, focusRequester = nameFocus)
+                if (members.isNotEmpty()) MemberChips(members, selected = username.trim()) { username = it }
+            } else {
+                FieldLabel(if (setup) "Your name" else "Username")
+                LoginField(username, { username = it }, onEnter = ::submit)
+                FieldLabel(if (setup) "Password (8+ characters)" else "Password")
+                LoginField(password, { password = it }, onEnter = ::submit, secret = true)
+            }
             if (setup) {
                 FieldLabel("Password again")
                 LoginField(repeat, { repeat = it }, onEnter = ::submit, secret = true)
@@ -181,12 +213,46 @@ fun LoginScreen(session: Session, modifier: Modifier = Modifier) {
                 )
             }
             if (!setup && !group) Text("Forgot your password? Whoever runs this server can reset it.", fontSize = 11.sp, color = TextFaint)
+            if (isWebPlatform && session.serverInfo?.androidApp == true) {
+                val uri = LocalUriHandler.current
+                Text(
+                    "Get the Android app",
+                    fontSize = 12.sp,
+                    color = Accent,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                        .clickable { runCatching { uri.openUri(session.serverUrl + "/download/NodeNote.apk") } }
+                        .padding(vertical = 4.dp),
+                )
+            }
             Spacer(Modifier.height(6.dp))
             Text(
                 "No server? Keep your boards on this device instead",
                 fontSize = 12.sp,
                 color = Accent,
                 modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { session.useThisDevice() }.padding(vertical = 4.dp),
+            )
+        }
+    }
+}
+
+/** "Been here before? Tap your name": the group's names, most recently seen first. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MemberChips(names: List<String>, selected: String, onPick: (String) -> Unit) {
+    Text("Been here before? Tap your name", fontSize = 11.sp, color = TextFaint)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        names.take(30).forEach { name ->
+            val picked = name.equals(selected, ignoreCase = true)
+            Text(
+                name,
+                fontSize = 12.sp,
+                color = if (picked) TextPrimary else TextSecondary,
+                fontWeight = if (picked) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                    .background(if (picked) Accent.copy(alpha = 0.22f) else PanelBackgroundRaised)
+                    .border(1.dp, if (picked) Accent else PanelBorder, RoundedCornerShape(12.dp))
+                    .clickable { onPick(name) }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
             )
         }
     }
@@ -210,6 +276,9 @@ fun LoginField(
     onEnter: () -> Unit = {},
     secret: Boolean = false,
     placeholder: String = "",
+    focusRequester: FocusRequester? = null,
+    /** Called when the field loses focus (after having had it). */
+    onFocusLost: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
     var reveal by remember { mutableStateOf(false) }
@@ -223,7 +292,11 @@ fun LoginField(
         visualTransformation = if (secret && !reveal) PasswordVisualTransformation() else VisualTransformation.None,
         modifier = Modifier
             .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged {
+                if (focused && !it.isFocused) onFocusLost()
+                focused = it.isFocused
+            }
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyDown && (it.key == Key.Enter || it.key == Key.NumPadEnter)) {
                     onEnter()

@@ -10,6 +10,7 @@ import com.nodenote.api.MessageUpdate
 import com.nodenote.model.Area
 import com.nodenote.model.AreaHandle
 import com.nodenote.model.Attachment
+import com.nodenote.model.BoardDiff
 import com.nodenote.model.BuiltinTypes
 import com.nodenote.model.CanvasElement
 import com.nodenote.model.ColorBy
@@ -235,6 +236,20 @@ class AppState(val session: Session) {
         redoStack = redoStack.map { rebase(it, oldBase, newBase) }
         syncedProject = newBase
         pruneStaleIds()
+    }
+
+    /**
+     * Earlier versions: shows the board as it was at a saved copy, as one undoable step. Only
+     * [BoardSync.restore] calls this (it then sends the change marked as a restore). False when
+     * the board is already exactly like that.
+     */
+    fun restoreLocally(old: Project): Boolean {
+        val target = old.copy(id = project.id)
+        if (BoardDiff.diff(project, target).isEmpty) return false
+        pushUndo()
+        project = target
+        pruneStaleIds()
+        return true
     }
 
     /** Set when a board loads; GraphCanvas frames the content once it knows its size. */
@@ -2010,6 +2025,96 @@ class AppState(val session: Session) {
     }
 
     /**
+     * Text shared into NodeNote from another app: a new card titled with its first line, the
+     * rest (and any link) as the card's first chat message, in empty space near the middle of
+     * the view.
+     */
+    fun addSharedCard(text: String) {
+        val lines = text.trim().lines()
+        val first = lines.firstOrNull().orEmpty().trim()
+        val title = (if (first.length > SHARED_TITLE_MAX) first.take(SHARED_TITLE_MAX).substringBeforeLast(' ') else first)
+            .ifBlank { first.take(SHARED_TITLE_MAX) }.ifBlank { "Shared" }
+        val rest = buildString {
+            if (title.length < first.length) appendLine(first)
+            lines.drop(1).joinToString("\n").trim().takeIf { it.isNotEmpty() }?.let { append(it) }
+        }.trim()
+        pushUndo()
+        // The middle of the view; before the map has been laid out (a phone on the chat page),
+        // the middle of the cards.
+        val center = if (canvasSize.width > 0 && !zoomToFitWhenSized) screenToWorld(canvasCenter())
+            else contentBounds()?.let { Offset((it.left + it.right) / 2f, (it.top + it.bottom) / 2f) } ?: Offset.Zero
+        val node = placeNodeOfType(freeSpotNear(center), BuiltinTypes.DEFAULT_NODE, title)
+        if (rest.isNotEmpty()) sendMessage(rest, node.id)
+        status = "Added \"$title\" from the shared text"
+    }
+
+    /** The free spot closest to [center] (rings outward), for a card that has no parent. */
+    private fun freeSpotNear(center: Offset): Offset {
+        if (spotIsFree(center.x, center.y)) return center
+        for (radius in listOf(200f, 320f, 440f, 560f, 700f)) {
+            for (step in 0 until 12) {
+                val angle = step * (kotlin.math.PI.toFloat() / 6f)
+                val cx = center.x + radius * kotlin.math.cos(angle)
+                val cy = center.y + radius * kotlin.math.sin(angle)
+                if (spotIsFree(cx, cy)) return Offset(cx, cy)
+            }
+        }
+        val cascade = (project.nodes.size % 6) * 18f
+        return center + Offset(cascade, cascade)
+    }
+
+    /** No card overlaps a new default-size card centred at ([cx], [cy]), with a margin. */
+    private fun spotIsFree(cx: Float, cy: Float): Boolean {
+        val l = cx - Node.DEFAULT_WIDTH / 2 - 24
+        val t = cy - Node.DEFAULT_HEIGHT / 2 - 24
+        val r = cx + Node.DEFAULT_WIDTH / 2 + 24
+        val b = cy + Node.DEFAULT_HEIGHT / 2 + 24
+        return project.nodes.none { n -> n.x < r && n.x + n.width > l && n.y < b && n.y + n.height > t }
+    }
+
+    private var connectCache: Triple<Pair<Project, List<Message>>, String, List<Node>>? = null
+
+    /**
+     * "Might connect to": up to three other cards whose words are most like this card's
+     * (title, description and its chat), for a titled card with few links. Its own words
+     * don't count, so other cards aren't measured against a perfect match.
+     */
+    fun connectionSuggestions(node: Node): List<Node> {
+        val p = project
+        val m = messages
+        connectCache?.let { (key, id, list) -> if (key.first === p && key.second === m && id == node.id) return list }
+        val linked = p.edges.mapNotNull { e ->
+            when (node.id) {
+                e.fromNodeId -> e.toNodeId
+                e.toNodeId -> e.fromNodeId
+                else -> null
+            }
+        }.toSet()
+        val result = if (node.title.isBlank() || node.title == defaultTitle(node.type) || linked.size > 1) {
+            emptyList()
+        } else {
+            val hidden = hiddenNodeIds
+            val others = p.copy(nodes = p.nodes.filter { it.id != node.id && it.id !in linked && it.id !in hidden })
+            val text = buildString {
+                append(node.title).append('\n').append(node.summary).append('\n').append(node.description)
+                m.forEach { if (it.nodeId == node.id && !it.deleted) append('\n').append(it.text) }
+            }
+            NodeMatcher(others, m.filter { it.nodeId != node.id })
+                .suggest(text, 3)
+                .mapNotNull { s -> others.nodes.find { it.id == s.nodeId } }
+        }
+        connectCache = Triple(p to m, node.id, result)
+        return result
+    }
+
+    /** Links [nodeId] to a suggested card (the default link type; undoable like any link). */
+    fun connectSuggested(nodeId: String, otherId: String) {
+        addEdge(nodeId, otherId)
+        val other = project.nodes.find { it.id == otherId }?.title ?: return
+        status = "Linked to \"$other\""
+    }
+
+    /**
      * Center point for a new child of [parent]: the first free spot on a ring
      * around it, starting on the side facing away from the parent's own parent
      * (so the map keeps growing outward from the goal).
@@ -2021,13 +2126,6 @@ class AppState(val session: Session) {
         } else {
             0.0f
         }
-        fun free(cx: Float, cy: Float): Boolean {
-            val l = cx - Node.DEFAULT_WIDTH / 2 - 24
-            val t = cy - Node.DEFAULT_HEIGHT / 2 - 24
-            val r = cx + Node.DEFAULT_WIDTH / 2 + 24
-            val b = cy + Node.DEFAULT_HEIGHT / 2 + 24
-            return project.nodes.none { n -> n.x < r && n.x + n.width > l && n.y < b && n.y + n.height > t }
-        }
         for (radius in listOf(240f, 360f, 480f)) {
             for (step in 0 until 12) {
                 // 0, +30°, -30°, +60°, … around the outward direction
@@ -2035,7 +2133,7 @@ class AppState(val session: Session) {
                 val angle = outward + offset
                 val cx = parent.centerX + radius * kotlin.math.cos(angle)
                 val cy = parent.centerY + radius * kotlin.math.sin(angle)
-                if (free(cx, cy)) return Offset(cx, cy)
+                if (spotIsFree(cx, cy)) return Offset(cx, cy)
             }
         }
         return Offset(parent.centerX + 240f, parent.centerY + 120f)
@@ -2056,6 +2154,9 @@ class AppState(val session: Session) {
 
         /** World-unit pitch of the canvas dot grid; Align snaps item corners to multiples of this. */
         const val GRID_SPACING = 26f
+
+        /** Longest title a shared text's first line becomes (the rest goes to the chat). */
+        private const val SHARED_TITLE_MAX = 80
 
         /** Node types that start life with status Open. */
         private val OPEN_BY_DEFAULT = setOf("Issue", "Improvement", "ActionItem")

@@ -1,6 +1,9 @@
 package com.nodenote.net
 
 import com.nodenote.api.AccountInfo
+import com.nodenote.api.Activity
+import com.nodenote.api.HistoryEntry
+import com.nodenote.api.Reply
 import com.nodenote.api.BoardSnapshot
 import com.nodenote.api.BoardSummary
 import com.nodenote.api.CreateBoardRequest
@@ -43,6 +46,14 @@ interface BoardApi {
     suspend fun postMessage(message: Message): Message
     suspend fun updateMessage(id: String, update: MessageUpdate): Message
     suspend fun sync(boardId: String, rev: Long, seq: Long, waitSeconds: Int = 25): SyncResponse
+    /** The group's member names (group sign-in), most recently seen first; needs no sign-in. */
+    suspend fun members(groupPassword: String): List<String>
+    suspend fun activity(): Activity
+    /** Saved copies of a board, newest first; [historyEntry] is the board as it was then. */
+    suspend fun history(boardId: String): List<HistoryEntry>
+    suspend fun historyEntry(boardId: String, entryId: Long): BoardSnapshot
+    /** Other people's chats on my cards with seq > [since]. */
+    suspend fun replies(since: Long): List<Reply>
     fun close()
 }
 
@@ -84,6 +95,13 @@ class DeviceApi(private val boards: DeviceBoards, private val userName: () -> St
         boards.updateMessage(id, update) ?: throw IllegalArgumentException("That message isn't on this device")
     override suspend fun sync(boardId: String, rev: Long, seq: Long, waitSeconds: Int) =
         boards.sync(boardId, rev, seq, waitSeconds * 1000L) ?: throw BoardMissingException(boardId)
+
+    // One person and no server: nobody else to list, no saved copies, nobody replying.
+    override suspend fun members(groupPassword: String): List<String> = emptyList()
+    override suspend fun activity() = Activity(emptyList(), emptyList())
+    override suspend fun history(boardId: String): List<HistoryEntry> = emptyList()
+    override suspend fun historyEntry(boardId: String, entryId: Long): BoardSnapshot = throw BoardMissingException(boardId)
+    override suspend fun replies(since: Long): List<Reply> = emptyList()
     override fun close() = Unit
 
     private fun noAccounts(): Nothing = throw IllegalStateException("Boards on this device don't use accounts")

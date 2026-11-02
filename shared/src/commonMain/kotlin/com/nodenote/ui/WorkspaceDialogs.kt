@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Surface
@@ -57,7 +58,8 @@ fun ModalCard(title: String, onDismiss: (() -> Unit)?, width: Dp = 440.dp, conte
             shape = RoundedCornerShape(12.dp),
             color = PanelBackground,
             border = BorderStroke(1.dp, PanelBorder),
-            modifier = Modifier.width(width).pointerInput(Unit) { detectTapGestures { } },
+            // At most [width]; a phone gets the screen's width less a margin.
+            modifier = Modifier.padding(12.dp).widthIn(max = width).fillMaxWidth().pointerInput(Unit) { detectTapGestures { } },
         ) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

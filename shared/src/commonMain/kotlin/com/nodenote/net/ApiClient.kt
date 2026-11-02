@@ -1,6 +1,10 @@
 package com.nodenote.net
 
 import com.nodenote.api.AccountInfo
+import com.nodenote.api.Activity
+import com.nodenote.api.HistoryEntry
+import com.nodenote.api.MembersRequest
+import com.nodenote.api.Reply
 import com.nodenote.api.ApiJson
 import com.nodenote.api.ChangePasswordRequest
 import com.nodenote.api.ChangeUsernameRequest
@@ -117,6 +121,18 @@ class ApiClient(serverUrl: String) : BoardApi {
             parameter("wait", waitSeconds)
             timeout { requestTimeoutMillis = (waitSeconds + 15) * 1000L }
         }.body()
+
+    override suspend fun members(groupPassword: String): List<String> =
+        http.post("$baseUrl/api/auth/members") { json(MembersRequest(groupPassword)) }.body()
+
+    override suspend fun activity(): Activity = http.get("$baseUrl/api/activity").body()
+
+    override suspend fun history(boardId: String): List<HistoryEntry> = http.get("$baseUrl/api/boards/$boardId/history").body()
+
+    override suspend fun historyEntry(boardId: String, entryId: Long): BoardSnapshot =
+        http.get("$baseUrl/api/boards/$boardId/history/$entryId").body()
+
+    override suspend fun replies(since: Long): List<Reply> = http.get("$baseUrl/api/replies") { parameter("since", since) }.body()
 
     override fun close() = http.close()
 

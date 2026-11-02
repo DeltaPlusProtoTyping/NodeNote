@@ -45,6 +45,10 @@ class BoardSync(private val state: AppState, private val session: Session, val b
     private val scope = session.scope
     private var job: Job? = null
     private val mutex = Mutex()
+    /** One patch on its way at a time (edits and restores), so a restore never races an edit. */
+    private val sending = Mutex()
+    /** History entry a restore not yet confirmed by the server put the board back to; 0 = none. */
+    private var pendingRestore = 0L
     private var baseRev = 0L
     private var msgSeq = 0L
 
@@ -139,17 +143,25 @@ class BoardSync(private val state: AppState, private val session: Session, val b
             }
     }
 
-    private suspend fun pushNow() {
+    private suspend fun pushNow() = sending.withLock { pushLocked() }
+
+    /** Sends what's unsent ([pendingRestore] marks it as putting the board back to that saved copy). */
+    private suspend fun pushLocked() {
+        val restoredFrom = pendingRestore
         val sentLocal: Project
         val sentRev: Long
         val patch = mutex.withLock {
             val base = state.syncedProject ?: return
             sentLocal = state.project
             sentRev = baseRev
-            BoardDiff.diff(base, sentLocal).takeUnless { it.isEmpty } ?: return
+            BoardDiff.diff(base, sentLocal).takeUnless { it.isEmpty } ?: run {
+                pendingRestore = 0
+                return
+            }
         }
         state.syncStatus = SyncStatus.Syncing
-        val response = session.api.patch(boardId, PatchRequest(sentRev, session.userName, patch))
+        val response = session.api.patch(boardId, PatchRequest(sentRev, session.userName, patch, restoredFrom))
+        if (pendingRestore == restoredFrom) pendingRestore = 0
         mutex.withLock {
             val merged = response.project
             when {
@@ -163,6 +175,32 @@ class BoardSync(private val state: AppState, private val session: Session, val b
         }
         session.markOnline()
         state.syncStatus = if (state.dirty) SyncStatus.Syncing else SyncStatus.Synced
+    }
+
+    /**
+     * Puts the board back the way it was at a saved copy ([entryId], the board [old] as it was
+     * then): unsent edits go first, then ONE patch from the board as the server has it now to
+     * [old], marked with the entry so the server saves the current board first (that's what
+     * makes the restore undoable from the list). Chats aren't part of a board, so they stay.
+     * Null when done, else what went wrong (nothing changed then, or the edit is kept and retried).
+     */
+    suspend fun restore(entryId: Long, old: Project): String? {
+        try {
+            sending.withLock {
+                pushLocked()
+                val changed = mutex.withLock { state.restoreLocally(old) }
+                if (!changed) return "The board is already like that"
+                // Kept until it's through, so a retry after a lost connection is still a restore.
+                pendingRestore = entryId
+                pushLocked()
+            }
+            return null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            failed(e)
+            return if (pendingRestore != 0L) "Restored here; it goes to the server when it's back" else "Could not reach the server"
+        }
     }
 
     private suspend fun pollLoop() {

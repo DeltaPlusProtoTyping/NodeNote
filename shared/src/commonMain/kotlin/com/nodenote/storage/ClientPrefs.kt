@@ -88,6 +88,24 @@ object ClientPrefs {
             ProjectStorage.writePrefs("dictionary.json", json.encodeToString(idList, value))
         }
 
+    /** "Got it" on the first-run tips card: it isn't shown again on this device. */
+    var tipsDismissed: Boolean
+        get() = ProjectStorage.readPrefs("tips_dismissed.txt")?.trim() == "1"
+        set(value) {
+            ProjectStorage.writePrefs("tips_dismissed.txt", if (value) "1" else "0")
+        }
+
+    /**
+     * Highest reply seq already told about, per server + name ([key]); null = never asked there,
+     * so the first check only learns where things stand instead of announcing old replies.
+     */
+    fun repliesSeen(key: String): Long? = decode(ProjectStorage.readPrefs("replies_seen.json"), readMap)?.get(key)
+
+    fun saveRepliesSeen(key: String, seq: Long) {
+        val all = decode(ProjectStorage.readPrefs("replies_seen.json"), readMap) ?: emptyMap()
+        ProjectStorage.writePrefs("replies_seen.json", json.encodeToString(readMap, all + (key to seq)))
+    }
+
     /** nodeId ("" = board inbox) → highest message seq this user has seen in that thread. */
     fun lastRead(boardId: String): Map<String, Long> =
         decode(ProjectStorage.readPrefs("read_$boardId.json"), readMap) ?: emptyMap()

@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,6 +69,16 @@ fun MainScreen(workspace: Workspace, modifier: Modifier = Modifier) {
             NewTypeDialog(focused)
             NewBoardDialog(workspace)
             SettingsDialog(workspace)
+            ActivityDialog(workspace)
+            HistoryDialog(workspace)
+        }
+        // Text shared in from another app lands on the board on screen, once one is open.
+        val shared = workspace.session.sharedText
+        LaunchedEffect(shared, focused.isLoaded) {
+            if (shared != null && focused.isLoaded) {
+                workspace.session.sharedText = null
+                focused.addSharedCard(shared)
+            }
         }
     }
 }
@@ -78,6 +89,7 @@ private fun MainContent(workspace: Workspace, windowWidthDp: Float) {
     Column(Modifier.fillMaxSize().background(CanvasBackground)) {
         TopBar(workspace)
         UpdateBanner(workspace)
+        SharedTextBanner(workspace)
         HorizontalDivider(color = PanelBorder)
         TabBar(workspace)
         HorizontalDivider(color = PanelBorder)
@@ -136,6 +148,7 @@ private fun CanvasArea(workspace: Workspace, modifier: Modifier) {
                 ConnectionBanner(tab, Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
                 // Keyboard help for the wide layout only (the phone layout has no keyboard to explain).
                 KeysLegend(tab, Modifier.align(Alignment.BottomStart).padding(10.dp))
+                TipsCard(workspace, compact = false, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
             }
         }
     }

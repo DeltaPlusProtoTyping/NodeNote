@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,6 +63,7 @@ fun CompactLayout(workspace: Workspace) {
     Column(Modifier.fillMaxSize().background(CanvasBackground)) {
         CompactTopBar(workspace)
         UpdateBanner(workspace)
+        SharedTextBanner(workspace)
         HorizontalDivider(color = PanelBorder)
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
@@ -72,6 +74,7 @@ fun CompactLayout(workspace: Workspace) {
                 state.boardId == null -> HomeView(workspace, Modifier.fillMaxSize())
                 else -> CompactMap(state)
             }
+            TipsCard(workspace, compact = true, modifier = Modifier.align(Alignment.TopCenter).padding(12.dp))
         }
         HorizontalDivider(color = PanelBorder)
         Row(Modifier.fillMaxWidth().height(52.dp).background(PanelBackground)) {
@@ -163,6 +166,19 @@ private fun CompactTopBar(workspace: Workspace) {
             ConnectionState.Connecting -> WarnAmber
             ConnectionState.Offline -> DangerRed
         }
+        var menuOpen by remember { mutableStateOf(false) }
+        Box {
+            Text(
+                "Menu",
+                fontSize = 13.sp,
+                color = TextSecondary,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { menuOpen = true }.padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                BoardMenuItems(workspace) { menuOpen = false }
+            }
+        }
+        Spacer(Modifier.width(6.dp))
         Box(Modifier.size(8.dp).background(dot, RoundedCornerShape(4.dp)))
         Spacer(Modifier.width(10.dp))
         val name = session.userName

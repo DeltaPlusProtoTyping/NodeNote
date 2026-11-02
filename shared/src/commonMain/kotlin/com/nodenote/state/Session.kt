@@ -14,6 +14,7 @@ import com.nodenote.storage.defaultServerUrl
 import com.nodenote.storage.deviceStore
 import com.nodenote.storage.isWebPlatform
 import com.nodenote.storage.startServerOnThisComputer
+import com.nodenote.storage.takeSharedText
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
@@ -183,6 +184,12 @@ class Session {
         else if (build != firstWebBuild) updateAvailable = true
     }
 
+    /**
+     * Text shared into the app from another one (browser: the PWA share target), waiting for a
+     * board to land on as a new card (see MainScreen). Null when there's none.
+     */
+    var sharedText by mutableStateOf(takeSharedText())
+
     /** Why the user was sent back to the sign-in screen (e.g. an expired session). */
     var signInNotice by mutableStateOf<String?>(null)
 
@@ -215,6 +222,19 @@ class Session {
 
     /** Joins with the group's password under [name] (servers set up for a group); null on success, else a message to show. */
     suspend fun join(name: String, password: String): String? = account { api.join(name.trim(), password) }
+
+    /**
+     * The names already in the group (group sign-in), so people can pick theirs instead of
+     * joining twice under two spellings. Null on a wrong password or no answer. Wrong tries are
+     * throttled by the server, so call it once per password, never per keystroke.
+     */
+    suspend fun groupMembers(groupPassword: String): List<String>? = try {
+        api.members(groupPassword)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
 
     private suspend fun account(call: suspend () -> com.nodenote.api.LoginResponse): String? = try {
         val result = call()

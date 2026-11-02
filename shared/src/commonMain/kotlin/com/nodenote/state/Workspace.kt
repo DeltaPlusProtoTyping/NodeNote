@@ -11,6 +11,7 @@ import com.nodenote.storage.ClientPrefs
 import com.nodenote.storage.ProjectSerializer
 import com.nodenote.storage.ProjectStorage
 import com.nodenote.storage.reloadWhenHidden
+import com.nodenote.storage.showNotification
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -41,12 +42,23 @@ class Workspace(val session: Session) {
     // ---- Dialogs owned by the workspace ----
     var settingsOpen by mutableStateOf(false)
     var newBoardOpen by mutableStateOf(false)
+    var activityOpen by mutableStateOf(false)
+    var historyOpen by mutableStateOf(false)
+
+    /** The first-run tips card, until "Got it" (then never again on this device, unless asked for). */
+    var tipsVisible by mutableStateOf(!ClientPrefs.tipsDismissed)
+
+    fun dismissTips() {
+        tipsVisible = false
+        ClientPrefs.tipsDismissed = true
+    }
 
     fun resizeBoardsPanel(deltaDp: Float) {
         boardsPanelWidth = (boardsPanelWidth + deltaDp).coerceIn(190f, 460f)
     }
 
     private var refreshJob: Job? = null
+    private var repliesJob: Job? = null
 
     init {
         // Reopen what was open last time; always keep at least one tab.
@@ -54,11 +66,13 @@ class Workspace(val session: Session) {
         if (reopen.isEmpty()) newTab() else reopen.forEach { openBoard(it) }
         showInFocusedPane(tabs.first())
         refreshJob = session.scope.launch { refreshLoop() }
+        repliesJob = session.scope.launch { repliesLoop() }
     }
 
     /** Stops all syncing (sign-out). Unsent edits get one last push. */
     fun dispose() {
         refreshJob?.cancel()
+        repliesJob?.cancel()
         tabs.forEach { it.closeBoard() }
     }
 
@@ -92,6 +106,59 @@ class Workspace(val session: Session) {
             throw e
         } catch (e: Exception) {
             session.markOffline(e)
+        }
+    }
+
+    // ---- Replies (others chatting on my cards) ----
+
+    /** While signed in to a server: checks for replies now and every minute. */
+    private suspend fun repliesLoop() {
+        if (session.onThisDevice) return
+        delay(5_000) // let the boards open first
+        while (true) {
+            checkReplies()
+            delay(60_000)
+        }
+    }
+
+    private suspend fun checkReplies() {
+        val key = "${session.serverUrl}|${session.userName}"
+        try {
+            val seen = ClientPrefs.repliesSeen(key)
+            val replies = session.api.replies(seen ?: 0)
+            val newest = replies.maxOfOrNull { it.seq } ?: (seen ?: 0)
+            // The first check on this device only learns where things stand.
+            if (seen != null) replies.sortedBy { it.seq }.forEach(::announce)
+            ClientPrefs.saveRepliesSeen(key, maxOf(newest, seen ?: 0))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Offline or an older server: try again next time.
+        }
+    }
+
+    private fun announce(reply: com.nodenote.api.Reply) {
+        val title = "${reply.author} on ${reply.nodeTitle.ifBlank { reply.boardName }}"
+        val shown = showNotification(title, reply.text.take(200), "reply-${reply.seq}") { openBoardAt(reply.boardId, reply.nodeId) }
+        if (!shown) focused.status = "$title: ${reply.text.lineSequence().first().take(80)}"
+    }
+
+    /** Opens a board and, once it has loaded, selects [nodeId] (its chat shows). */
+    fun openBoardAt(boardId: String, nodeId: String) {
+        openBoard(boardId)
+        val tab = tabs.firstOrNull { it.boardId == boardId } ?: return
+        session.scope.launch {
+            repeat(100) {
+                if (tab.isLoaded) {
+                    if (tab.project.nodes.any { it.id == nodeId }) {
+                        tab.selectOnly(nodeId)
+                        tab.rightTab = AppState.RightTab.Chat
+                        tab.focusNode(nodeId)
+                    }
+                    return@launch
+                }
+                delay(150)
+            }
         }
     }
 

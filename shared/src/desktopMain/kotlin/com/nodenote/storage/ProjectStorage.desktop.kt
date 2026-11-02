@@ -127,3 +127,11 @@ actual suspend fun bundledDictionary(): String? = withContext(Dispatchers.IO) {
 }
 
 actual fun startServerOnThisComputer(serverUrl: String) = LocalServer.startIfNeeded(serverUrl)
+
+actual fun takeSharedText(): String? = null
+
+actual fun notificationPermission(): String = ""
+
+actual fun requestNotificationPermission(onResult: (String) -> Unit) = onResult("")
+
+actual fun showNotification(title: String, body: String, tag: String, onClick: () -> Unit): Boolean = false
