@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,7 @@ import kotlin.math.roundToInt
 @Composable
 fun DetailsView(state: AppState, modifier: Modifier = Modifier) {
     val node = state.selectedNode
+    LaunchedEffect(state) { state.loadTeamNames() }
 
     Column(
         modifier
@@ -155,20 +157,22 @@ private fun NodeEditor(state: AppState, node: Node) {
         }
     }
 
-    FieldLabel("Owner")
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CompactTextField(
-            value = node.owner,
-            onValueChange = { v -> state.updateNode(node.id) { it.copy(owner = v) } },
-            modifier = Modifier.weight(1f),
-            placeholder = "Who's driving this?",
-        )
-        // One-click owners: everyone who has posted on this board.
-        val people = (state.messages.map { it.author } + state.session.userName).filter { it.isNotBlank() }.distinct().take(4)
+    FieldLabel("Assigned to")
+    CompactTextField(
+        value = node.owner,
+        onValueChange = { v -> state.updateNode(node.id) { it.copy(owner = v) } },
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = "Who's doing this?",
+    )
+    // One-click assignees: everyone on the server, plus whoever has posted on this board.
+    val people = (listOf(state.session.userName) + state.teamNames + state.messages.map { it.author })
+        .filter { it.isNotBlank() }.distinctBy { it.lowercase() }
+    Spacer(Modifier.height(4.dp))
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         people.forEach { name ->
-            Spacer(Modifier.width(4.dp))
-            Pill(name, authorColor(name), filled = node.owner == name, onClick = {
-                state.updateNode(node.id) { it.copy(owner = if (it.owner == name) "" else name) }
+            val me = name.equals(state.session.userName, ignoreCase = true)
+            Pill(if (me) "$name (me)" else name, authorColor(name), filled = node.owner.equals(name, ignoreCase = true), onClick = {
+                state.assignNode(node.id, if (node.owner.equals(name, ignoreCase = true)) "" else name)
             })
         }
     }

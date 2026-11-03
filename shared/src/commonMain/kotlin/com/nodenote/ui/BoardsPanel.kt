@@ -144,7 +144,7 @@ private fun BoardRow(workspace: Workspace, b: BoardSummary) {
 
 private enum class NodeSort(val label: String) { Importance("Importance"), Activity("Recent chat"), Status("Status"), Name("Name") }
 
-private enum class NodeScope(val label: String) { All("All"), Active("Open work"), Solved("Solved"), Unread("Unread"), Typos("Typos") }
+private enum class NodeScope(val label: String) { All("All"), Mine("Mine"), Active("Open work"), Solved("Solved"), Unread("Unread"), Typos("Typos") }
 
 @Composable
 private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) {
@@ -159,6 +159,7 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
         .filter {
             when (scope) {
                 NodeScope.All -> true
+                NodeScope.Mine -> it.owner.isNotBlank() && it.owner.equals(state.session.userName, ignoreCase = true)
                 NodeScope.Active -> it.status.isActive
                 NodeScope.Solved -> it.status == NodeStatus.Solved
                 NodeScope.Unread -> (stats[it.id]?.unread ?: 0) > 0

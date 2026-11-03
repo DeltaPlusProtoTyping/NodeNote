@@ -58,6 +58,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -79,6 +80,7 @@ import kotlin.math.roundToInt
 
 /** Marks private nodes (lock + label on the card, the Private chip). */
 val PrivateAmber = Color(0xFFE5B25B)
+private val DoneGreen = Color(NodeStatus.Solved.colorArgb)
 
 /**
  * One node on the canvas, rendered as a rounded card.
@@ -261,6 +263,8 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            DoneBox(node.status == NodeStatus.Solved) { state.toggleNodeDone(node.id) }
+            Spacer(Modifier.width(6.dp))
             TypeDot(typeDef.color, 7.dp)
             Spacer(Modifier.width(6.dp))
             Text(
@@ -292,6 +296,10 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                 Spacer(Modifier.width(5.dp))
                 CardRating(state, node)
             }
+            if (node.owner.isNotBlank()) {
+                Spacer(Modifier.width(5.dp))
+                AssigneeBadge(node.owner)
+            }
         }
         Spacer(Modifier.height(5.dp))
         if (state.editingNodeId == node.id) {
@@ -301,7 +309,8 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                 node.title.ifBlank { "(untitled)" },
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (node.title.isBlank()) TextFaint else TextPrimary,
+                color = if (node.title.isBlank() || node.status == NodeStatus.Solved) TextFaint else TextPrimary,
+                textDecoration = if (node.status == NodeStatus.Solved) TextDecoration.LineThrough else null,
                 lineHeight = 16.sp,
                 maxLines = 12,
                 overflow = TextOverflow.Ellipsis,
@@ -317,6 +326,32 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** The card's done box: click it to tick the card off (Solved), click again to reopen it. */
+@Composable
+private fun DoneBox(done: Boolean, onToggle: () -> Unit) {
+    val shape = RoundedCornerShape(3.dp)
+    Box(
+        Modifier
+            .size(12.dp)
+            .clip(shape)
+            .background(if (done) DoneGreen else Color.Transparent, shape)
+            .border(1.dp, if (done) DoneGreen else TextFaint, shape)
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (done) GlyphIcon(Glyph.Check, Color.White, 10.dp)
+    }
+}
+
+/** Who the card is assigned to: their initials in their person color. */
+@Composable
+private fun AssigneeBadge(name: String) {
+    val initials = name.trim().split(' ').filter { it.isNotEmpty() }.take(2).joinToString("") { it.first().uppercase() }
+    Box(Modifier.size(15.dp).background(authorColor(name), CircleShape), contentAlignment = Alignment.Center) {
+        Text(initials, fontSize = 7.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
     }
 }
 

@@ -46,7 +46,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -90,7 +92,7 @@ import kotlin.math.min
  * always agree.
  *
  * Gesture routing:
- *  - Middle-button (scroll wheel) drag pans the camera, anywhere on the canvas —
+ *  - Middle-button (scroll wheel), right or Shift+left drag pans the camera, anywhere on the canvas —
  *    handled in the Initial pass so it wins even when the drag starts on a node.
  *  - Scroll wheel zooms at the cursor.
  *  - Left-drag on a node moves the selection (NodeCard consumes it first);
@@ -210,7 +212,8 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
                             PointerEventType.Move -> {
                                 val change = event.changes.first()
                                 state.pointerPos = change.position
-                                if (event.buttons.isTertiaryPressed || event.buttons.isSecondaryPressed) {
+                                val shiftPan = event.buttons.isPrimaryPressed && event.keyboardModifiers.isShiftPressed
+                                if (event.buttons.isTertiaryPressed || event.buttons.isSecondaryPressed || shiftPan) {
                                     val delta = change.positionChange()
                                     if (delta != Offset.Zero) {
                                         state.pan += delta
@@ -513,7 +516,7 @@ private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
         EmptyHintRow("Chat", "select a node; the chat panel is on the right")
         EmptyHintRow("Braindump", "nothing selected = post to the board inbox")
         EmptyHintRow("Rate", "mark key details 1–10 as you write them")
-        EmptyHintRow("Navigate", "middle- or right-drag to pan · scroll to zoom")
+        EmptyHintRow("Navigate", "middle-, right- or Shift-drag to pan · scroll to zoom")
         EmptyHintRow("Connect", "drag a node's port dot to another node")
         EmptyHintRow("Areas", "select cards, then Area (Ctrl+G) to name a territory")
     }

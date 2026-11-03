@@ -178,7 +178,7 @@ private fun keysFor(state: AppState): Pair<String, List<Pair<String, String>>> {
         else -> "map" to listOf(
             "Double-click" to "new card",
             "Drag" to "box-select",
-            "Right-drag" to "pan",
+            "Right- or Shift-drag" to "pan",
             "Wheel" to "zoom",
             "Ctrl+G" to "draw an area",
             "Ctrl+Z / Y" to "undo / redo",

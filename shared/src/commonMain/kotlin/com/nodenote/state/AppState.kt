@@ -902,6 +902,37 @@ class AppState(val session: Session) {
         if (status == NodeStatus.Solved) this.status = "Solved: \"${node.title}\" is on the Wins list"
     }
 
+    /** Assigns a card to someone ("" = nobody); one undo step. */
+    fun assignNode(id: String, name: String) {
+        val node = project.nodes.find { it.id == id } ?: return
+        if (node.owner == name) return
+        pushUndo()
+        updateNode(id) { it.copy(owner = name) }
+        status = if (name.isEmpty()) "\"${node.title}\" isn't assigned to anyone now" else "Assigned \"${node.title}\" to $name"
+    }
+
+    /** Everyone with an account on the server (for the assign picker); loaded by [loadTeamNames]. */
+    var teamNames by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** Fetches [teamNames] once per board view; quietly stays empty offline or on this device only. */
+    suspend fun loadTeamNames() {
+        if (teamNames.isNotEmpty()) return
+        teamNames = try {
+            session.api.activity().people.sortedByDescending { it.lastSeen }.map { it.name }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** The card's done box: ticks it off (Solved), or reopens a solved card. */
+    fun toggleNodeDone(id: String) {
+        val node = project.nodes.find { it.id == id } ?: return
+        setNodeStatus(id, if (node.status == NodeStatus.Solved) NodeStatus.Open else NodeStatus.Solved)
+    }
+
     /** Rates a card; its size follows (growing or shrinking around its centre). */
     fun setNodeImportance(id: String, value: Int) {
         val v = clampImportance(value)
