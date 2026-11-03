@@ -35,7 +35,7 @@ class Workspace(val session: Session) {
         private set
     var showArchived by mutableStateOf(false)
         private set
-    var boardsPanelVisible by mutableStateOf(true)
+    var boardsPanelVisible by mutableStateOf(false)
     var boardsPanelWidth by mutableStateOf(260f)
         private set
 

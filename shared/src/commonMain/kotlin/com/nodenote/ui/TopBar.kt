@@ -62,7 +62,11 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.roundToInt
 
-/** Main toolbar: board actions, insert/edit actions, who/where, zoom controls. Operates on the workspace's focused tab. */
+/**
+ * Main toolbar, kept short: the board menu (boards, files, team, board tools), + Add,
+ * Undo, then on the right the list/search panel, sync dot, Fit and the person menu.
+ * Everything else lives in those menus, the card's bar and the canvas's right-click menu.
+ */
 @Composable
 fun TopBar(workspace: Workspace) {
     val state = workspace.focused
@@ -71,122 +75,90 @@ fun TopBar(workspace: Workspace) {
         Modifier.fillMaxWidth().height(46.dp).background(PanelBackground).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Actions scroll sideways in a narrow browser window; status + view controls stay pinned right.
         Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-            // App mark
             Box(Modifier.size(10.dp).background(Accent, RoundedCornerShape(3.dp)))
-            Spacer(Modifier.width(8.dp))
-            Text("NodeNote", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-
-            ToolbarDivider()
-
-            ToolbarButton("+ Board", onClick = { workspace.newBoardOpen = true })
-            ToolbarButton("Import", onClick = { workspace.importBoardFromFile() })
-            ExportMenuButton(workspace, enabled = loaded)
+            Spacer(Modifier.width(6.dp))
             BoardMenuButton(workspace)
-
-            ToolbarDivider()
-
+            Spacer(Modifier.width(8.dp))
             AddNodeButton(state, enabled = loaded)
             Spacer(Modifier.width(4.dp))
-            InsertButton(state, enabled = loaded)
-            ToolbarButton(
-                "Align",
-                onClick = { state.alignSelected() },
-                enabled = state.selectedNodeIds.isNotEmpty(),
-            )
-            ToolbarButton("Tidy", onClick = { state.tidyLayout() }, enabled = loaded && state.project.nodes.size > 1)
-            // Around the selected cards; with nothing selected, drag a box on the map.
-            ToolbarButton(
-                if (state.drawingArea) "Drawing area" else "Area",
-                onClick = { state.areaFromSelection() },
-                enabled = loaded,
-                color = if (state.drawingArea) Accent else TextPrimary,
-            )
-            ToolbarButton(
-                "Delete",
-                onClick = { state.deleteSelected() },
-                enabled = state.selectedNodeIds.isNotEmpty(),
-                color = DangerRed,
-            )
-
-            ToolbarDivider()
-
             ToolbarButton("Undo", onClick = { state.undo() }, enabled = state.canUndo, color = TextSecondary)
-            ToolbarButton("Redo", onClick = { state.redo() }, enabled = state.canRedo, color = TextSecondary)
-
-            ToolbarDivider()
-
-            // Hides private nodes everywhere, for sharing the screen.
-            ToolbarButton(
-                if (state.presenting) "Presenting" else "Present",
-                onClick = { state.togglePresenting() },
-                enabled = loaded,
-                color = if (state.presenting) PrivateAmber else TextSecondary,
-            )
-            ToolbarButton("Rate", onClick = { state.rateBoardOpen = true }, enabled = loaded, color = TextSecondary)
             Spacer(Modifier.width(16.dp))
         }
 
-        ConnectionIndicator(workspace)
-        Spacer(Modifier.width(6.dp))
-        UserButton(workspace)
-        ThemeMenuButton()
-        ToolbarDivider()
-
-        // Zoom controls
-        SmallIconButton("−", onClick = { state.zoomOut() })
-        Text(
-            "${(state.zoom * 100).roundToInt()}%",
-            fontSize = 12.sp,
+        ToolbarButton(
+            if (workspace.boardsPanelVisible) "Hide list" else "Search",
+            onClick = { workspace.boardsPanelVisible = !workspace.boardsPanelVisible },
             color = TextSecondary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(min = 46.dp),
         )
-        SmallIconButton("+", onClick = { state.zoomIn() })
-        Spacer(Modifier.width(4.dp))
+        ConnectionIndicator(workspace)
         ToolbarButton("Fit", onClick = { state.zoomToFit() }, color = TextSecondary)
         Spacer(Modifier.width(4.dp))
-        SmallIconButton("?", onClick = { state.shortcutsOpen = true })
+        UserButton(workspace)
     }
 }
 
-@Composable
-private fun ToolbarDivider() {
-    Spacer(Modifier.width(10.dp))
-    VerticalDivider(Modifier.height(20.dp), color = PanelBorder)
-    Spacer(Modifier.width(10.dp))
-}
-
-/** Export ▾ — the board as .json (backup / hand-off) or the map as a picture. */
-@Composable
-private fun ExportMenuButton(workspace: Workspace, enabled: Boolean) {
-    var menuOpen by remember { mutableStateOf(false) }
-    Box {
-        ToolbarButton("Export", onClick = { menuOpen = true }, enabled = enabled, dropdown = true)
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(
-                text = { Text("Board as .json", fontSize = 12.sp) },
-                onClick = { menuOpen = false; workspace.exportFocusedBoard() },
-            )
-            DropdownMenuItem(
-                text = { Text("Map as PDF, SVG or PNG…", fontSize = 12.sp) },
-                onClick = { menuOpen = false; workspace.focused.openExportDialog() },
-            )
-        }
-    }
-}
-
-/** Board ▾ — Activity, Earlier versions, reply notifications, tips (see BoardMenuItems). */
+/**
+ * The board's name, as a menu: switch boards, make or import one, export, the team
+ * views (Activity, Earlier versions), and the whole-board tools (Tidy, Area, Rate, Present).
+ */
 @Composable
 private fun BoardMenuButton(workspace: Workspace) {
     var menuOpen by remember { mutableStateOf(false) }
+    val state = workspace.focused
+    val loaded = state.isLoaded
+    val name = workspace.summaryOf(state.boardId)?.name ?: "NodeNote"
     Box {
-        ToolbarButton("Board", onClick = { menuOpen = true }, dropdown = true)
+        Row(
+            Modifier.clip(RoundedCornerShape(6.dp)).clickable { menuOpen = true }.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 240.dp))
+            Spacer(Modifier.width(6.dp))
+            GlyphIcon(Glyph.ChevronDown, TextSecondary, 10.dp)
+        }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            BoardMenuItems(workspace) { menuOpen = false }
+            val close = { menuOpen = false }
+            MenuCaption("Boards")
+            workspace.boards.take(12).forEach { b ->
+                DropdownMenuItem(
+                    text = { Text(b.name, fontSize = 12.sp, color = if (b.id == state.boardId) Accent else TextPrimary, maxLines = 1) },
+                    onClick = { close(); workspace.openBoard(b.id) },
+                )
+            }
+            DropdownMenuItem(text = { Text("+ New board", fontSize = 12.sp, color = Accent) }, onClick = { close(); workspace.newBoardOpen = true })
+            DropdownMenuItem(text = { Text("Import a board (.json)", fontSize = 12.sp) }, onClick = { close(); workspace.importBoardFromFile() })
+            if (loaded) {
+                HorizontalDivider(color = PanelBorder)
+                MenuCaption("This board")
+                DropdownMenuItem(text = { Text("Tidy the layout", fontSize = 12.sp) }, enabled = state.project.nodes.size > 1,
+                    onClick = { close(); state.tidyLayout() })
+                DropdownMenuItem(text = { Text("Draw an area", fontSize = 12.sp) }, onClick = { close(); state.areaFromSelection() })
+                DropdownMenuItem(text = { Text("Rate cards one by one", fontSize = 12.sp) }, onClick = { close(); state.rateBoardOpen = true })
+                DropdownMenuItem(
+                    text = { Text(if (state.presenting) "Stop presenting" else "Present (hide private cards)", fontSize = 12.sp) },
+                    onClick = { close(); state.togglePresenting() },
+                )
+                DropdownMenuItem(text = { Text("Export as .json", fontSize = 12.sp) }, onClick = { close(); workspace.exportFocusedBoard() })
+                DropdownMenuItem(text = { Text("Export as PDF, SVG or PNG", fontSize = 12.sp) }, onClick = { close(); state.openExportDialog() })
+            }
+            HorizontalDivider(color = PanelBorder)
+            BoardMenuItems(workspace, close)
         }
     }
+}
+
+@Composable
+private fun MenuCaption(text: String) {
+    Text(
+        text.uppercase(),
+        fontSize = 9.sp,
+        color = TextFaint,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+    )
 }
 
 /** Green/amber/red dot + label for the server connection; click opens settings. */
@@ -203,8 +175,10 @@ private fun ConnectionIndicator(workspace: Workspace) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(8.dp).background(color, RoundedCornerShape(4.dp)))
-        Spacer(Modifier.width(6.dp))
-        Text(
+        val calm = session.connection == ConnectionState.Online && !session.onThisDevice &&
+            (!workspace.focused.isLoaded || workspace.focused.syncStatus.label == "Synced")
+        if (!calm) Spacer(Modifier.width(6.dp))
+        if (!calm) Text(
             when {
                 session.onThisDevice && session.connection == ConnectionState.Offline -> "Not saved yet"
                 session.onThisDevice -> "On this device"
@@ -218,45 +192,31 @@ private fun ConnectionIndicator(workspace: Workspace) {
     }
 }
 
-/** Who I am (the name on my messages). Opens settings. */
+/** Who I am: a menu with settings, the theme and the keyboard shortcuts. */
 @Composable
 private fun UserButton(workspace: Workspace) {
     val name = workspace.session.userName
-    Row(
-        Modifier.clip(RoundedCornerShape(6.dp)).clickable { workspace.settingsOpen = true }.padding(horizontal = 6.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(20.dp).clip(RoundedCornerShape(10.dp)).background(if (name.isBlank()) PanelBorder else authorColor(name)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(name.take(1).uppercase().ifBlank { "?" }, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        }
-        Spacer(Modifier.width(6.dp))
-        Text(name.ifBlank { "Set your name" }, fontSize = 12.sp, color = if (name.isBlank()) Accent else TextPrimary)
-    }
-}
-
-/** Appearance theme picker (Dark / Night / Light). Writes to the global ThemeState, which re-skins the whole UI. */
-@Composable
-private fun ThemeMenuButton() {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
-        ToolbarButton(ThemeState.option.label, onClick = { menuOpen = true }, color = TextSecondary, dropdown = true)
+        Box(
+            Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(if (name.isBlank()) PanelBorder else authorColor(name))
+                .clickable { menuOpen = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(name.take(1).uppercase().ifBlank { "?" }, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            Text(name.ifBlank { "No name yet" }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            HorizontalDivider(color = PanelBorder)
+            DropdownMenuItem(text = { Text("Settings and account", fontSize = 12.sp) }, onClick = { menuOpen = false; workspace.settingsOpen = true })
+            DropdownMenuItem(text = { Text("Keyboard shortcuts", fontSize = 12.sp) }, onClick = { menuOpen = false; workspace.focused.shortcutsOpen = true })
+            HorizontalDivider(color = PanelBorder)
+            MenuCaption("Theme")
             AppThemeOption.entries.forEach { opt ->
                 DropdownMenuItem(
-                    text = {
-                        Text(
-                            opt.label,
-                            fontSize = 12.sp,
-                            color = if (opt == ThemeState.option) Accent else TextPrimary,
-                        )
-                    },
-                    onClick = {
-                        ThemeState.select(opt)
-                        menuOpen = false
-                    },
+                    text = { Text(opt.label, fontSize = 12.sp, color = if (opt == ThemeState.option) Accent else TextPrimary) },
+                    onClick = { ThemeState.select(opt); menuOpen = false },
                 )
             }
         }
@@ -279,7 +239,7 @@ private fun AddNodeButton(state: AppState, enabled: Boolean) {
             shape = RoundedCornerShape(6.dp),
             contentPadding = PaddingValues(horizontal = 12.dp),
         ) {
-            Text("+ Add Node", fontSize = 12.sp)
+            Text("+ Add", fontSize = 12.sp)
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             val all = state.allNodeTypes
@@ -312,6 +272,8 @@ private fun AddNodeButton(state: AppState, enabled: Boolean) {
             }
 
             HorizontalDivider(color = PanelBorder)
+            DropdownMenuItem(text = { Text("Text block", fontSize = 12.sp) }, onClick = { menuOpen = false; state.addTextElement() })
+            DropdownMenuItem(text = { Text("Image…", fontSize = 12.sp) }, onClick = { menuOpen = false; insertImage(state) })
             DropdownMenuItem(
                 text = { Text("+ New type…", fontSize = 12.sp, color = Accent) },
                 onClick = {
@@ -367,33 +329,8 @@ private fun RecentTypeChip(def: NodeTypeDef, onClick: () -> Unit) {
     }
 }
 
-/** "Insert" menu for non-node canvas elements: text blocks and images. */
-@Composable
-private fun InsertButton(state: AppState, enabled: Boolean) {
-    var menuOpen by remember { mutableStateOf(false) }
-    Box {
-        ToolbarButton("Insert", onClick = { menuOpen = true }, enabled = enabled, dropdown = true)
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(
-                text = { Text("Text block", fontSize = 12.sp) },
-                onClick = {
-                    menuOpen = false
-                    state.addTextElement()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("Image…", fontSize = 12.sp) },
-                onClick = {
-                    menuOpen = false
-                    insertImage(state)
-                },
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalEncodingApi::class)
-private fun insertImage(state: AppState) {
+internal fun insertImage(state: AppState) {
     ProjectStorage.pickFile("image/*") { picked ->
         if (picked == null) {
             state.status = "Insert cancelled"

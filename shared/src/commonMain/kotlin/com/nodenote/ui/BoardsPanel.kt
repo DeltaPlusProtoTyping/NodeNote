@@ -196,11 +196,18 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
         // Titles with typos (once the dictionary has loaded): the Typos chip lists them with one-click fixes.
         val typoCount = if (state.spell == null) 0 else state.shownProject.nodes.count { state.typosIn(it.title).isNotEmpty() }
         if (scope == NodeScope.Typos && typoCount == 0) scope = NodeScope.All
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            NodeScope.entries.forEach { s ->
-                if (s == NodeScope.Typos && typoCount == 0) return@forEach
-                val label = if (s == NodeScope.Typos) "Typos $typoCount" else s.label
-                FilterChip(label, selected = scope == s, color = if (s == NodeScope.Typos) TypoRed else Accent) { scope = s }
+        Box {
+            var open by remember { mutableStateOf(false) }
+            val label = if (scope == NodeScope.Typos) "Typos $typoCount" else scope.label
+            FilterChip("Show: $label", selected = scope != NodeScope.All, color = if (scope == NodeScope.Typos) TypoRed else Accent) { open = true }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                NodeScope.entries.forEach { s ->
+                    if (s == NodeScope.Typos && typoCount == 0) return@forEach
+                    DropdownMenuItem(
+                        text = { Text(if (s == NodeScope.Typos) "Typos ($typoCount)" else s.label, fontSize = 12.sp, color = if (s == scope) Accent else TextPrimary) },
+                        onClick = { scope = s; open = false },
+                    )
+                }
             }
         }
         PeopleRow(state)
@@ -235,10 +242,7 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
 private fun PeopleRow(state: AppState) {
     val people = state.people
     Spacer(Modifier.height(6.dp))
-    if (people.isEmpty()) {
-        Text("Type @Name in a title or message to track people here.", fontSize = 10.sp, color = TextFaint)
-        return
-    }
+    if (people.isEmpty()) return
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(3.dp),

@@ -266,21 +266,13 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
             DoneBox(node.status == NodeStatus.Solved) { state.toggleNodeDone(node.id) }
             Spacer(Modifier.width(6.dp))
             TypeDot(typeDef.color, 7.dp)
-            Spacer(Modifier.width(6.dp))
-            Text(
-                typeDef.label.uppercase(),
-                fontSize = 9.sp,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextFaint,
-                maxLines = 1,
-                modifier = Modifier.weight(1f, fill = true),
-            )
+            Spacer(Modifier.weight(1f))
             if (node.isPrivate) {
                 GlyphIcon(Glyph.Lock, PrivateAmber, 9.dp)
                 Spacer(Modifier.width(5.dp))
             }
-            if (node.status != NodeStatus.None) {
+            // Open is the usual case and Solved is the check, so only the states that need attention get words.
+            if (node.status == NodeStatus.InProgress || node.status == NodeStatus.Blocked || node.status == NodeStatus.Parked) {
                 Box(Modifier.size(6.dp).background(node.status.color, CircleShape))
                 Spacer(Modifier.width(3.dp))
                 Text(
@@ -292,7 +284,8 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                     maxLines = 1,
                 )
             }
-            if (node.importance > 0 || node.effort > 0) {
+            // The rating shows on the selected card; the card's size already says how much it matters.
+            if ((node.importance > 0 || node.effort > 0) && node.id in state.selectedNodeIds) {
                 Spacer(Modifier.width(5.dp))
                 CardRating(state, node)
             }

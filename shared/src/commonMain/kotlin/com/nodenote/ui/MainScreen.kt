@@ -91,8 +91,11 @@ private fun MainContent(workspace: Workspace, windowWidthDp: Float) {
         UpdateBanner(workspace)
         SharedTextBanner(workspace)
         HorizontalDivider(color = PanelBorder)
-        TabBar(workspace)
-        HorizontalDivider(color = PanelBorder)
+        // Tabs only once there's more than one board open.
+        if (workspace.tabs.size > 1) {
+            TabBar(workspace)
+            HorizontalDivider(color = PanelBorder)
+        }
 
         Row(Modifier.weight(1f)) {
             if (workspace.boardsPanelVisible) {
@@ -146,8 +149,8 @@ private fun CanvasArea(workspace: Workspace, modifier: Modifier) {
             } else {
                 GraphCanvas(tab, Modifier.fillMaxSize())
                 ConnectionBanner(tab, Modifier.align(Alignment.TopCenter).padding(top = 12.dp))
-                // Keyboard help for the wide layout only (the phone layout has no keyboard to explain).
-                KeysLegend(tab, Modifier.align(Alignment.BottomStart).padding(10.dp))
+                // Help for the wide layout only (the phone layout has no keyboard to explain).
+                HelpChip(tab, Modifier.align(Alignment.BottomStart).padding(10.dp))
                 TipsCard(workspace, compact = false, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
             }
         }
@@ -181,6 +184,22 @@ fun UpdateBanner(workspace: Workspace) {
             )
         }
     }
+}
+
+/** "? Help" in the canvas corner: opens the shortcuts and how-to list. */
+@Composable
+private fun HelpChip(state: AppState, modifier: Modifier = Modifier) {
+    Text(
+        "?  Help",
+        fontSize = 11.sp,
+        color = TextSecondary,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(PanelBackground)
+            .border(1.dp, PanelBorder, RoundedCornerShape(6.dp))
+            .clickable { state.shortcutsOpen = true }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }
 
 /** Floating hint shown while a connection is pending ("click a target node"). */

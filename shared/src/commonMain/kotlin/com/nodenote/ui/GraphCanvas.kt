@@ -16,16 +16,23 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +66,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nodenote.model.BuiltinTypes
@@ -69,6 +77,7 @@ import com.nodenote.theme.Accent
 import com.nodenote.theme.CanvasBackground
 import com.nodenote.theme.PanelBackground
 import com.nodenote.theme.PanelBackgroundRaised
+import com.nodenote.theme.DangerRed
 import com.nodenote.theme.PanelBorder
 import com.nodenote.theme.TextFaint
 import com.nodenote.theme.TextPrimary
@@ -77,6 +86,7 @@ import com.nodenote.theme.ThemeState
 import com.nodenote.theme.color
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * The graph editor viewport.
@@ -108,6 +118,8 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current.density
     val focusRequester = remember { FocusRequester() }
+    // Where a right-click (without dragging) opened the canvas menu; null = closed.
+    var contextMenuAt by remember { mutableStateOf<Offset?>(null) }
 
     // Keep AppState's camera math in sync with the actual viewport metrics.
     SideEffect { state.viewDensity = density }
@@ -180,6 +192,9 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             // middle-button drag pans the canvas even when it starts on top of a
             // node — consuming the move cancels the node's own drag detector.
             .pointerInput(state) {
+                // A right-click that doesn't drag opens the canvas menu (a right-drag pans).
+                var rightDownAt: Offset? = null
+                var rightTravel = 0f
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -200,7 +215,20 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
                             // Any press over the canvas (or a node on it) gives the
                             // canvas keyboard focus for the Delete shortcut. Clicks
                             // that land on a text field re-take focus right after.
-                            PointerEventType.Press -> focusRequester.requestFocus()
+                            PointerEventType.Press -> {
+                                focusRequester.requestFocus()
+                                if (event.buttons.isSecondaryPressed && !event.buttons.isPrimaryPressed) {
+                                    rightDownAt = event.changes.first().position
+                                    rightTravel = 0f
+                                }
+                            }
+                            PointerEventType.Release -> {
+                                val at = rightDownAt
+                                if (at != null && !event.buttons.isSecondaryPressed) {
+                                    rightDownAt = null
+                                    if (rightTravel < 6f) contextMenuAt = at
+                                }
+                            }
                             PointerEventType.Scroll -> {
                                 val change = event.changes.first()
                                 val delta = change.scrollDelta.y
@@ -215,6 +243,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
                                 val shiftPan = event.buttons.isPrimaryPressed && event.keyboardModifiers.isShiftPressed
                                 if (event.buttons.isTertiaryPressed || event.buttons.isSecondaryPressed || shiftPan) {
                                     val delta = change.positionChange()
+                                    if (rightDownAt != null) rightTravel += delta.getDistance()
                                     if (delta != Offset.Zero) {
                                         state.pan += delta
                                         change.consume()
@@ -269,6 +298,8 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
         val selectedEdge = state.selectedEdgeId?.let { id -> state.shownProject.edges.find { it.id == id } }
         if (selectedEdge != null && quiet) LinkQuickBarOverlay(state, selectedEdge)
 
+        contextMenuAt?.let { at -> CanvasMenu(state, at) { contextMenuAt = null } }
+
         if (state.presenting) PresentingBadge(state, Modifier.align(Alignment.TopStart).padding(10.dp))
         if (state.drawingArea) DrawingAreaHint(state, Modifier.align(Alignment.TopCenter).padding(10.dp))
 
@@ -276,6 +307,43 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
             EmptyCanvasHint(Modifier.align(Alignment.Center))
         }
     }
+}
+
+/** The right-click menu: add things here, act on the selection, and the board-wide tools. */
+@Composable
+private fun CanvasMenu(state: AppState, at: Offset, close: () -> Unit) {
+    Box(Modifier.offset { IntOffset(at.x.roundToInt(), at.y.roundToInt()) }) {
+        DropdownMenu(expanded = true, onDismissRequest = close) {
+            MenuItem("Add a card here", close) { state.addNodeAt(state.screenToWorld(at)) }
+            MenuItem("Add a text block", close) { state.addTextElement() }
+            MenuItem("Add an image…", close) { insertImage(state) }
+            MenuItem("Paste", close) { state.paste() }
+            val selected = state.selectedNodeIds.size
+            if (selected > 0) {
+                HorizontalDivider(color = PanelBorder)
+                MenuItem("Duplicate", close) { state.duplicateSelected() }
+                if (selected > 1) MenuItem("Line them up", close) { state.alignSelected() }
+                MenuItem("Put in an area", close) { state.areaFromSelection() }
+                MenuItem("Delete", close, color = DangerRed) { state.deleteSelected() }
+            }
+            HorizontalDivider(color = PanelBorder)
+            MenuItem("Select all", close) { state.selectAll() }
+            MenuItem("Tidy the layout", close, enabled = state.project.nodes.size > 1) { state.tidyLayout() }
+            if (selected == 0) MenuItem("Draw an area", close) { state.areaFromSelection() }
+            HorizontalDivider(color = PanelBorder)
+            MenuItem("Undo", close, enabled = state.canUndo) { state.undo() }
+            MenuItem("Redo", close, enabled = state.canRedo) { state.redo() }
+        }
+    }
+}
+
+@Composable
+private fun MenuItem(label: String, close: () -> Unit, enabled: Boolean = true, color: Color = TextPrimary, action: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, fontSize = 12.sp, color = if (enabled) color else TextFaint) },
+        enabled = enabled,
+        onClick = { close(); action() },
+    )
 }
 
 /** Colors for edge rendering, so the exporter can re-theme edges (light/dark) without duplicating the drawing code. */
@@ -509,30 +577,8 @@ private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
             Text("NodeNote", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         }
         Spacer(Modifier.height(5.dp))
-        Text("An empty board — map the topics, then talk under each one.", fontSize = 12.sp, color = TextSecondary)
-        Spacer(Modifier.height(20.dp))
-        EmptyHintRow("Add", "+ Add Node, or double-click the canvas")
-        EmptyHintRow("Branch", "select a node: Tab adds a child, Enter a sibling")
-        EmptyHintRow("Chat", "select a node; the chat panel is on the right")
-        EmptyHintRow("Braindump", "nothing selected = post to the board inbox")
-        EmptyHintRow("Rate", "mark key details 1–10 as you write them")
-        EmptyHintRow("Navigate", "middle-, right- or Shift-drag to pan · scroll to zoom")
-        EmptyHintRow("Connect", "drag a node's port dot to another node")
-        EmptyHintRow("Areas", "select cards, then Area (Ctrl+G) to name a territory")
-    }
-}
-
-@Composable
-private fun EmptyHintRow(label: String, detail: String) {
-    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            label.uppercase(),
-            fontSize = 9.sp,
-            letterSpacing = 0.8.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextFaint,
-            modifier = Modifier.width(78.dp),
-        )
-        Text(detail, fontSize = 11.sp, color = TextSecondary)
+        Text("An empty board. Double-click anywhere to add the first card.", fontSize = 12.sp, color = TextSecondary)
+        Spacer(Modifier.height(4.dp))
+        Text("Right-click for more, or ? Help for every shortcut.", fontSize = 12.sp, color = TextFaint)
     }
 }

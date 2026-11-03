@@ -18,12 +18,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +51,7 @@ import com.nodenote.model.areaOf
 import com.nodenote.model.pick
 import com.nodenote.state.AppState
 import com.nodenote.theme.Accent
+import com.nodenote.theme.DangerRed
 import com.nodenote.theme.PanelBackground
 import com.nodenote.theme.PanelBorder
 import com.nodenote.theme.TextFaint
@@ -60,8 +63,8 @@ import kotlin.math.roundToInt
 
 /**
  * The selected node's toolbar, floating just above its card (below it near the top
- * edge): type, status, rating, private, size, "+ Child" and its area. Everything the
- * Details tab can do that matters while mapping, one click from the card — and the
+ * edge): status, who it's assigned to, and "..." for type, rating, size, private, child,
+ * area and delete. What matters while mapping, one click from the card — and the
  * same on a phone, where there's no right panel next to the map.
  */
 @Composable
@@ -103,43 +106,102 @@ private fun NodeQuickBar(state: AppState, node: Node, modifier: Modifier = Modif
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        TypeChip(state, node)
         StatusChip(state, node)
-        RateChip(state, node)
-        BarChip(onClick = { state.setNodePrivate(node.id, !node.isPrivate) }, highlight = if (node.isPrivate) PrivateAmber else null) {
-            GlyphIcon(Glyph.Lock, if (node.isPrivate) PrivateAmber else TextFaint, 10.dp)
-            Spacer(Modifier.width(4.dp))
-            Text("Private", fontSize = 11.sp, color = if (node.isPrivate) TextPrimary else TextSecondary)
-        }
-        SizeChip(state, node)
+        AssignChip(state, node)
         TypoChip(state, node)
-        BarChip(onClick = { state.addChildNode(node.id) }) {
-            GlyphIcon(Glyph.Plus, Accent, 10.dp)
-            Spacer(Modifier.width(3.dp))
-            Text("Child", fontSize = 11.sp, color = TextPrimary)
-            Text("  Tab", fontSize = 9.sp, color = TextFaint)
-        }
-        AreaChip(state, node)
+        MoreChip(state, node)
     }
 }
 
-/** The card's area (click to select it), or "+ Area" to draw one around the card and its children. */
+/** Who's doing it: their initials once assigned; the menu lists the team. */
 @Composable
-private fun AreaChip(state: AppState, node: Node) {
-    val home = state.shownProject.areaOf(node)
-    if (home != null) {
-        BarChip(onClick = { state.selectArea(home.id) }) {
-            Box(Modifier.size(8.dp).background(Color(home.tint), RoundedCornerShape(2.dp)))
-            Spacer(Modifier.width(5.dp))
-            Text(home.title.ifBlank { "Area" }, fontSize = 11.sp, color = TextSecondary, maxLines = 1)
-        }
-    } else {
-        BarChip(onClick = { state.addAreaAroundBranch(node.id) }) {
-            GlyphIcon(Glyph.Plus, Accent, 10.dp)
+private fun AssignChip(state: AppState, node: Node) {
+    var open by remember { mutableStateOf(false) }
+    LaunchedEffect(state) { state.loadTeamNames() }
+    Box {
+        BarChip(onClick = { open = true }) {
+            if (node.owner.isBlank()) {
+                Text("Assign", fontSize = 11.sp, color = TextSecondary)
+            } else {
+                Box(Modifier.size(16.dp).background(authorColor(node.owner), CircleShape), contentAlignment = Alignment.Center) {
+                    Text(node.owner.take(1).uppercase(), fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+                Spacer(Modifier.width(5.dp))
+                Text(node.owner, fontSize = 11.sp, color = TextPrimary, maxLines = 1)
+            }
             Spacer(Modifier.width(3.dp))
-            Text("Area", fontSize = 11.sp, color = TextPrimary)
+            GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            val me = state.session.userName
+            val people = (listOf(me) + state.teamNames + state.messages.map { it.author })
+                .filter { it.isNotBlank() }.distinctBy { it.lowercase() }
+            people.forEach { name ->
+                val current = node.owner.equals(name, ignoreCase = true)
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(8.dp).background(authorColor(name), CircleShape))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (name.equals(me, ignoreCase = true)) "$name (me)" else name, fontSize = 12.sp,
+                                color = if (current) Accent else TextPrimary)
+                        }
+                    },
+                    onClick = { state.assignNode(node.id, name); open = false },
+                )
+            }
+            if (node.owner.isNotBlank()) {
+                HorizontalDivider(color = PanelBorder)
+                DropdownMenuItem(text = { Text("Nobody", fontSize = 12.sp, color = TextSecondary) }, onClick = { state.assignNode(node.id, ""); open = false })
+            }
         }
     }
+}
+
+/** Which of the "..." menus is open. */
+private enum class MoreMenu { Main, Type, Rate, Size }
+
+/** "..." on the card's bar: type, rating, size, private, child, area, delete. */
+@Composable
+private fun MoreChip(state: AppState, node: Node) {
+    var open by remember { mutableStateOf<MoreMenu?>(null) }
+    val close = { open = null }
+    Box {
+        BarChip(onClick = { open = MoreMenu.Main }) {
+            Text("•••", fontSize = 11.sp, color = TextSecondary)
+        }
+        DropdownMenu(expanded = open == MoreMenu.Main, onDismissRequest = close) {
+            val def = state.nodeTypeOf(node.type)
+            MoreRow("Type: ${def.label}") { open = MoreMenu.Type }
+            MoreRow(if (node.importance == 0 && node.effort == 0) "Rate importance and effort" else "Rating: ${node.importance.takeIf { it > 0 } ?: "?"} / effort ${node.effort.takeIf { it > 0 } ?: "?"}") { open = MoreMenu.Rate }
+            MoreRow("Size") { open = MoreMenu.Size }
+            HorizontalDivider(color = PanelBorder)
+            MoreRow("Add a child card  (Tab)") { close(); state.addChildNode(node.id) }
+            val home = state.shownProject.areaOf(node)
+            if (home != null) {
+                MoreRow("Select its area: ${home.title.ifBlank { "Area" }}") { close(); state.selectArea(home.id) }
+            } else {
+                MoreRow("Put it in a new area") { close(); state.addAreaAroundBranch(node.id) }
+            }
+            MoreRow(if (node.isPrivate) "Make it public" else "Make it private") { close(); state.setNodePrivate(node.id, !node.isPrivate) }
+            if (state.selectedNodeIds.size > 1) MoreRow("Line up the selected cards") { close(); state.alignSelected() }
+            MoreRow("Details and notes") {
+                close()
+                state.rightTab = AppState.RightTab.Details
+                state.inspectorVisible = true
+            }
+            HorizontalDivider(color = PanelBorder)
+            MoreRow("Delete", color = DangerRed) { close(); state.deleteSelected() }
+        }
+        TypeMenu(state, node, expanded = open == MoreMenu.Type, onDismiss = close)
+        RatingMenu(state, node.id, expanded = open == MoreMenu.Rate, onDismiss = close)
+        SizeMenu(state, node, expanded = open == MoreMenu.Size, onDismiss = close)
+    }
+}
+
+@Composable
+private fun MoreRow(label: String, color: Color = TextPrimary, onClick: () -> Unit) {
+    DropdownMenuItem(text = { Text(label, fontSize = 12.sp, color = color) }, onClick = onClick)
 }
 
 @Composable
@@ -157,50 +219,39 @@ internal fun BarChip(onClick: () -> Unit, highlight: Color? = null, content: @Co
 }
 
 @Composable
-private fun TypeChip(state: AppState, node: Node) {
-    var open by remember { mutableStateOf(false) }
-    val def = state.nodeTypeOf(node.type)
-    Box {
-        BarChip(onClick = { open = true }) {
-            TypeDot(def.color, 8.dp)
-            Spacer(Modifier.width(5.dp))
-            Text(def.label, fontSize = 11.sp, color = TextPrimary, maxLines = 1)
-            Spacer(Modifier.width(3.dp))
-            GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            // The work types first (what boards are made of), then whatever else this board uses.
-            val work = state.allNodeTypes.filter { it.category == NodeCategory.Work }
-            val recent = state.recentNodeTypeIds.mapNotNull { id -> state.allNodeTypes.find { it.id == id } }.filter { it !in work }
-            val custom = state.allNodeTypes.filter { it.category == NodeCategory.Custom }.filter { it !in recent }
-            (work + recent + custom).forEach { t ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TypeDot(t.color, 8.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text(t.label, fontSize = 12.sp, color = if (t.id == node.type) Accent else TextPrimary)
-                        }
-                    },
-                    onClick = {
-                        if (t.id != node.type) {
-                            state.pushUndo()
-                            state.setNodeType(node.id, t.id)
-                        }
-                        open = false
-                    },
-                )
-            }
-            HorizontalDivider(color = PanelBorder)
+private fun TypeMenu(state: AppState, node: Node, expanded: Boolean, onDismiss: () -> Unit) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        // The work types first (what boards are made of), then whatever else this board uses.
+        val work = state.allNodeTypes.filter { it.category == NodeCategory.Work }
+        val recent = state.recentNodeTypeIds.mapNotNull { id -> state.allNodeTypes.find { it.id == id } }.filter { it !in work }
+        val custom = state.allNodeTypes.filter { it.category == NodeCategory.Custom }.filter { it !in recent }
+        (work + recent + custom).forEach { t ->
             DropdownMenuItem(
-                text = { Text("More types… (Details)", fontSize = 12.sp, color = TextSecondary) },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TypeDot(t.color, 8.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(t.label, fontSize = 12.sp, color = if (t.id == node.type) Accent else TextPrimary)
+                    }
+                },
                 onClick = {
-                    state.rightTab = AppState.RightTab.Details
-                    state.inspectorVisible = true
-                    open = false
+                    if (t.id != node.type) {
+                        state.pushUndo()
+                        state.setNodeType(node.id, t.id)
+                    }
+                    onDismiss()
                 },
             )
         }
+        HorizontalDivider(color = PanelBorder)
+        DropdownMenuItem(
+            text = { Text("More types… (Details)", fontSize = 12.sp, color = TextSecondary) },
+            onClick = {
+                state.rightTab = AppState.RightTab.Details
+                state.inspectorVisible = true
+                onDismiss()
+            },
+        )
     }
 }
 
@@ -220,7 +271,9 @@ private fun StatusChip(state: AppState, node: Node) {
             GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            NodeStatus.entries.forEach { s ->
+            val everyday = listOf(NodeStatus.Open, NodeStatus.InProgress, NodeStatus.Blocked, NodeStatus.Solved)
+            (everyday + listOf(NodeStatus.Parked, NodeStatus.None)).forEachIndexed { i, s ->
+                if (i == everyday.size) HorizontalDivider(color = PanelBorder)
                 DropdownMenuItem(
                     text = { StatusPill(s, filled = s == node.status) },
                     onClick = {
@@ -230,23 +283,6 @@ private fun StatusChip(state: AppState, node: Node) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun RateChip(state: AppState, node: Node) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        BarChip(onClick = { open = true }, highlight = if (node.importance == 0 && node.effort == 0) Accent else null) {
-            if (node.importance == 0 && node.effort == 0) {
-                Text("Rate", fontSize = 11.sp, color = TextPrimary)
-            } else {
-                ImportanceBadge(node.importance, size = 16.dp, showUnrated = true)
-                Spacer(Modifier.width(3.dp))
-                if (node.effort > 0) EffortBadge(node.effort, height = 16.dp) else Text("E?", fontSize = 10.sp, color = TextFaint)
-            }
-        }
-        RatingMenu(state, node.id, expanded = open, onDismiss = { open = false })
     }
 }
 
@@ -293,15 +329,9 @@ private fun TypoChip(state: AppState, node: Node) {
 private val SizePresets = listOf("Small" to 1, "Normal" to 3, "Large" to 7, "Huge" to 10, "Urgent" to 12)
 
 @Composable
-private fun SizeChip(state: AppState, node: Node) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        BarChip(onClick = { open = true }) {
-            Text("Size", fontSize = 11.sp, color = TextSecondary)
-            Spacer(Modifier.width(3.dp))
-            GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+private fun SizeMenu(state: AppState, node: Node, expanded: Boolean, onDismiss: () -> Unit) {
+    run {
+        DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
             SizePresets.forEach { (label, level) ->
                 val current = node.importance == level
                 DropdownMenuItem(
@@ -313,7 +343,7 @@ private fun SizeChip(state: AppState, node: Node) {
                     },
                     onClick = {
                         state.setNodeImportance(node.id, level)
-                        open = false
+                        onDismiss()
                     },
                 )
             }

@@ -175,16 +175,19 @@ private fun ChatHeader(state: AppState, node: Node?) {
             }
         }
         if (node != null) ConnectSuggestions(state, node)
-        // Filters: importance floor, kind, text search.
+        // Search, plus a Filter chip that opens the rest (importance floor, kind, unsorted only).
+        val filtered = state.chatMinImportance > 0 || state.chatKindFilter != null || (node == null && state.feedInboxOnly)
+        var filtersOpen by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(0 to "All", 5 to "5+", 7 to "7+", 9 to "9+", 11 to "11+").forEach { (min, label) ->
-                FilterChip(label, selected = state.chatMinImportance == min, color = importanceColor(min.coerceAtLeast(1))) {
-                    state.chatMinImportance = min
+            FilterChip(if (filtered) "Filtered" else "Filter", selected = filtersOpen || filtered, color = Accent) {
+                if (filtered) {
+                    state.chatMinImportance = 0
+                    state.chatKindFilter = null
+                    state.feedInboxOnly = false
+                    filtersOpen = false
+                } else {
+                    filtersOpen = !filtersOpen
                 }
-            }
-            KindFilter(state)
-            if (node == null) {
-                FilterChip("Unsorted", selected = state.feedInboxOnly, color = Accent) { state.feedInboxOnly = !state.feedInboxOnly }
             }
             CompactTextField(
                 value = state.chatSearch,
@@ -194,6 +197,19 @@ private fun ChatHeader(state: AppState, node: Node?) {
                 minHeight = 24.dp,
                 textStyle = TextStyle(color = TextPrimary, fontSize = 11.sp),
             )
+        }
+        if (filtersOpen || filtered) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(0 to "All", 5 to "5+", 7 to "7+", 9 to "9+", 11 to "11+").forEach { (min, label) ->
+                    FilterChip(label, selected = state.chatMinImportance == min, color = importanceColor(min.coerceAtLeast(1))) {
+                        state.chatMinImportance = min
+                    }
+                }
+                KindFilter(state)
+                if (node == null) {
+                    FilterChip("Unsorted", selected = state.feedInboxOnly, color = Accent) { state.feedInboxOnly = !state.feedInboxOnly }
+                }
+            }
         }
     }
 }
@@ -656,9 +672,9 @@ internal fun Composer(state: AppState, node: Node?) {
                     modifier = Modifier.clip(RoundedCornerShape(4.dp)).clickable { state.editingMessageId = null }.padding(4.dp),
                 )
             }
-        } else {
+        } else if (hasDraft || state.composerKind != MessageKind.Note || state.composerImportance > 0) {
             // Kind + importance are set before sending, so key details are rated as they're written.
-            // One compact line: both open small pickers.
+            // One compact line: both open small pickers. Shown once there's something to send.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ComposerKindPicker(state)
                 Spacer(Modifier.width(6.dp))

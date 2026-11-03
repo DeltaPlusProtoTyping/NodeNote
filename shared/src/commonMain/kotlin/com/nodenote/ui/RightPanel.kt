@@ -16,10 +16,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,7 +57,9 @@ fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean 
             Modifier.fillMaxWidth().height(36.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AppState.RightTab.entries.forEach { tab ->
+            // Chat and Details always; Sort and Priorities live under More (and show as a tab while open).
+            val extra = state.rightTab.takeIf { it == AppState.RightTab.Sort || it == AppState.RightTab.Priorities }
+            listOfNotNull(AppState.RightTab.Chat, AppState.RightTab.Details, extra).forEach { tab ->
                 val badge = when (tab) {
                     AppState.RightTab.Chat -> state.totalUnread
                     AppState.RightTab.Sort -> state.unsorted.size
@@ -61,6 +68,7 @@ fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean 
                 RightTabButton(tab.label, selected = state.rightTab == tab, badge = badge) { state.rightTab = tab }
                 Spacer(Modifier.width(2.dp))
             }
+            MoreViewsButton(state)
             Spacer(Modifier.weight(1f))
             if (!compact) {
                 ToolbarButton(
@@ -80,6 +88,26 @@ fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean 
             state.rightTab == AppState.RightTab.Sort -> SortView(state, Modifier.fillMaxSize())
             state.rightTab == AppState.RightTab.Priorities -> PrioritiesView(state, Modifier.fillMaxSize())
             else -> DetailsView(state, Modifier.fillMaxSize())
+        }
+    }
+}
+
+/** More: the Sort pile (with how many thoughts wait in it) and Priorities. */
+@Composable
+private fun MoreViewsButton(state: AppState) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        val waiting = state.unsorted.size
+        RightTabButton("More", selected = false, badge = waiting.takeIf { state.rightTab != AppState.RightTab.Sort } ?: 0) { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(if (waiting > 0) "Sort the unsorted pile ($waiting)" else "Sort the unsorted pile", fontSize = 12.sp) },
+                onClick = { state.rightTab = AppState.RightTab.Sort; open = false },
+            )
+            DropdownMenuItem(
+                text = { Text("Priorities: quick wins and wins", fontSize = 12.sp) },
+                onClick = { state.rightTab = AppState.RightTab.Priorities; open = false },
+            )
         }
     }
 }

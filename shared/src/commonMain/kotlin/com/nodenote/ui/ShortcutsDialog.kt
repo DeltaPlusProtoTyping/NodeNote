@@ -77,6 +77,7 @@ private val shortcutGroups = listOf(
         "Ctrl + 0" to "Reset view",
         "Mouse wheel" to "Zoom at cursor",
         "Middle-, right- or Shift + drag" to "Pan canvas",
+        "Right-click" to "Menu: add here, paste, tidy, undo…",
     ),
     "Canvas" to listOf(
         "Double-click empty space" to "Add a node (last-used type) and type its title",

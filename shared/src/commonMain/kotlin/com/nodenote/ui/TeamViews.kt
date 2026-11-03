@@ -301,11 +301,10 @@ fun TipsCard(workspace: Workspace, compact: Boolean, modifier: Modifier = Modifi
         )
     } else {
         listOf(
-            "Click a card to open its chat on the right.",
-            "Drag a card to move it.",
-            "Double-click empty space for a new card (or + Add Node).",
+            "Double-click empty space for a new card (or + Add).",
+            "Click a card to open its chat on the right; tick its box when it's done.",
             "Drag the dot on a card's right edge onto another card to link them.",
-            "Activity and Earlier versions are in the Board menu at the top.",
+            "Right-click for more. Boards, Activity and Earlier versions are under the board's name.",
         )
     }
     Column(
