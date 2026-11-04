@@ -136,12 +136,13 @@ of inactivity. Failed sign-ins are throttled (5 per username per 15 minutes).
 ### 5. Public access (Tailscale Funnel)
 
 ```bash
-tailscale funnel --bg --https=10000 --set-path=/nodenote http://127.0.0.1:8870
+tailscale funnel --bg --https=443 --set-path=/nodenote http://127.0.0.1:8870
 ```
 
-This publishes the app at `https://master.impala-bass.ts.net:10000/nodenote/` for anyone with an
-account; no Tailscale is needed on their side. Turn it off with
-`tailscale funnel --https=10000 --set-path=/nodenote off`.
+This publishes the app at `https://master.impala-bass.ts.net/nodenote/` for anyone with an
+account; no Tailscale is needed on their side. Use port 443: corporate networks often block the
+other Funnel ports (8443, 10000). Turn it off with
+`tailscale funnel --https=443 --set-path=/nodenote off`.
 
 ## The Obsidian vault
 

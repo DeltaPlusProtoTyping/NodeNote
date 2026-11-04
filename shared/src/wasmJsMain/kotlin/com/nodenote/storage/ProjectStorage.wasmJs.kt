@@ -40,7 +40,7 @@ actual object ProjectStorage {
 
 /**
  * The server that served this page, including any path it is mounted under
- * (e.g. https://host:10000/nodenote when published through Tailscale Funnel),
+ * (e.g. https://host/nodenote when published through Tailscale Funnel),
  * unless `?server=` overrides it for development.
  */
 actual fun defaultServerUrl(): String = queryParam("server") ?: pageBaseUrl()

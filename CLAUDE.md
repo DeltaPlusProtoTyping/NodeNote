@@ -66,8 +66,9 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
   logon and every 5 minutes (a no-op while running), so a stopped server comes back by itself;
   the script disables it while deploying. Port 8787 is taken
   by one of Ben's Python apps.
-- Public: Tailscale Funnel `https://master.impala-bass.ts.net:10000/nodenote/` → 127.0.0.1:8870
-  (Funnel ports are only 443/8443/10000, all used; `/` on :10000 is another app on 8092). The web
+- Public: Tailscale Funnel `https://master.impala-bass.ts.net/nodenote/` (443) → 127.0.0.1:8870; `:10000`
+  is kept as an alias for old links (corp Wi-Fi blocks 10000). Funnel ports are only 443/8443/10000 and
+  sharing is per port, so `/` on 443 (node-console, 8420, password-protected) is public too. The web
   client derives its API base from the page path, so the app works under a path prefix.
 - Testers: a second server instance with **group sign-in** (`Accounts.join`: name + one group password,
   hash in `<data>/group-password.txt`, set with `MainKt grouppass <pw>|off`; members can't use normal
