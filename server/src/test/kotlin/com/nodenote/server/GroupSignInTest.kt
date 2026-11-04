@@ -92,9 +92,30 @@ class GroupSignInTest {
                 val badName = client.post("/api/auth/join") { json(JoinRequest("x", "group-secret")) }
                 assertEquals(HttpStatusCode.BadRequest, badName.status)
             }
+            // With groupaccounts on, the group password signs in to Ben's own account, from either form.
             Database(config.databaseFile).use { db ->
-                Accounts(db, groupPasswordFile = config.groupPasswordFile).setGroupPassword(null)
+                Accounts(db, groupPasswordFile = config.groupPasswordFile, groupOpensAccountsFile = config.groupOpensAccountsFile)
+                    .setGroupOpensAccounts(true)
             }
+            testApplication {
+                application { nodeNoteModule(config, vaultDebounceMillis = 60_000) }
+                val client = createClient { install(ContentNegotiation) { json(ApiJson) } }
+                val joined: LoginResponse = client.post("/api/auth/join") { json(JoinRequest("ben", "group-secret")) }.body()
+                assertEquals("Ben", joined.username)
+                val login = client.post("/api/auth/login") { json(LoginRequest("Ben", "group-secret")) }
+                assertEquals(HttpStatusCode.OK, login.status)
+                assertEquals("Ben", login.body<LoginResponse>().username)
+                assertEquals(HttpStatusCode.OK, client.post("/api/auth/login") { json(LoginRequest("Ben", TEST_PASSWORD)) }.status)
+                val wrong = client.post("/api/auth/login") { json(LoginRequest("Ben", "not-it")) }
+                assertEquals(HttpStatusCode.Unauthorized, wrong.status)
+            }
+            Database(config.databaseFile).use { db ->
+                Accounts(db, groupPasswordFile = config.groupPasswordFile, groupOpensAccountsFile = config.groupOpensAccountsFile).apply {
+                    setGroupOpensAccounts(false)
+                    setGroupPassword(null)
+                }
+            }
+            assertFalse(Files.exists(config.groupOpensAccountsFile))
             assertFalse(Files.exists(config.groupPasswordFile))
         } finally {
             dir.toFile().deleteRecursively()

@@ -37,13 +37,16 @@ class TooManyAttemptsException(message: String) : RuntimeException(message)
  * Group sign-in (for testing with a group): with a group password set in [groupPasswordFile]
  * (a PBKDF2 hash, written by the `grouppass` command), anyone who knows it joins under a name
  * of their choosing. Those members have no password of their own ([GROUP_MEMBER] in place of
- * a hash), so they can't sign in the ordinary way, and real accounts' names can't be joined as.
+ * a hash), so they can't sign in the ordinary way, and real accounts' names can't be joined as,
+ * unless [groupOpensAccountsFile] exists (the `groupaccounts on` command): then the group password
+ * signs in to a real account by its name too, from either sign-in form.
  */
 class Accounts(
     private val db: Database,
     private val clock: () -> Long = ::nowMillis,
     private val failureDelayMillis: Long = 600,
     private val groupPasswordFile: Path? = null,
+    private val groupOpensAccountsFile: Path? = null,
 ) {
     private val random = SecureRandom()
     private val failures = ConcurrentHashMap<String, MutableList<Long>>()
@@ -54,7 +57,9 @@ class Accounts(
         val key = username.trim().lowercase()
         checkThrottle(key)
         val row = io { db.user(username.trim()) }
-        if (row == null || !verifyPassword(password, row.second)) {
+        val viaGroup = row != null && row.second != GROUP_MEMBER && io { groupOpensAccounts() } &&
+            io { groupHash() }?.let { verifyPassword(password, it) } == true
+        if (row == null || !(viaGroup || verifyPassword(password, row.second))) {
             recordFailure(key)
             delay(failureDelayMillis)
             throw UnauthorizedException("Wrong username or password")
@@ -103,6 +108,7 @@ class Accounts(
             when {
                 row == null -> io { db.insertUser(wanted, GROUP_MEMBER, clock()) }.let { wanted }
                 row.second == GROUP_MEMBER -> row.first
+                io { groupOpensAccounts() } -> row.first
                 else -> throw ForbiddenException("\"${row.first}\" is someone's account: pick a different name")
             }
         }
@@ -138,6 +144,19 @@ class Accounts(
     }
 
     private val joinLock = Mutex()
+
+    /** Turns on or off the group password signing in to real accounts too. */
+    fun setGroupOpensAccounts(on: Boolean) {
+        val file = groupOpensAccountsFile ?: throw IllegalStateException("No group accounts file")
+        if (on) {
+            Files.createDirectories(file.parent)
+            Files.writeString(file, "on\n")
+        } else {
+            Files.deleteIfExists(file)
+        }
+    }
+
+    private fun groupOpensAccounts(): Boolean = groupOpensAccountsFile?.let { Files.isRegularFile(it) } == true
 
     private fun groupHash(): String? =
         groupPasswordFile?.takeIf { Files.isRegularFile(it) }?.let { runCatching { Files.readString(it).trim() }.getOrNull() }?.takeIf { it.isNotEmpty() }

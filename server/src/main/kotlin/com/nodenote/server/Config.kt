@@ -30,6 +30,9 @@ data class ServerConfig(
     /** The group password's hash, when group sign-in is on (see [Accounts]). */
     val groupPasswordFile: Path get() = dataDir.resolve("group-password.txt")
 
+    /** Present = the group password also signs in to real accounts by their name (see [Accounts]). */
+    val groupOpensAccountsFile: Path get() = dataDir.resolve("group-opens-accounts.txt")
+
     /** The Android app testers download (`/download/NodeNote.apk`), when it's been put there. */
     val androidApk: Path get() = dataDir.resolve("downloads").resolve("NodeNote.apk")
 

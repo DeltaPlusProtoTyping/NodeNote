@@ -55,7 +55,7 @@ private val log = LoggerFactory.getLogger("com.nodenote.server.Main")
 
 fun main(args: Array<String>) {
     // Admin commands: `users`, `adduser <name> <password>`, `passwd <name> <password>`,
-    // `grouppass <password>|off`, `importboard <board.json> [name]`,
+    // `grouppass <password>|off`, `groupaccounts on|off`, `importboard <board.json> [name]`,
     // `importmessages <board id> <messages.json>`, `archiveboard <id>` (plus the usual --data flag).
     // They work on the database directly, so stop the server first.
     val command = args.takeWhile { !it.startsWith("--") }
@@ -85,7 +85,7 @@ fun main(args: Array<String>) {
 
 private fun runAdminCommand(command: List<String>, config: ServerConfig): Int = try {
     Database(config.databaseFile).use { db ->
-        val accounts = Accounts(db, groupPasswordFile = config.groupPasswordFile)
+        val accounts = Accounts(db, groupPasswordFile = config.groupPasswordFile, groupOpensAccountsFile = config.groupOpensAccountsFile)
         when (command.first()) {
             "users" -> accounts.users().forEach(::println)
             "adduser" -> {
@@ -107,6 +107,14 @@ private fun runAdminCommand(command: List<String>, config: ServerConfig): Int = 
                     accounts.setGroupPassword(command[1])
                     println("Group sign-in is on: anyone with this password joins with their name")
                 }
+            }
+            "groupaccounts" -> {
+                require(command.size == 2 && command[1] in setOf("on", "off")) { "Usage: groupaccounts on|off" }
+                accounts.setGroupOpensAccounts(command[1] == "on")
+                println(
+                    if (command[1] == "on") "The group password now also signs in to real accounts by their name"
+                    else "Real accounts need their own password again",
+                )
             }
             "importboard" -> {
                 require(command.size in 2..3) { "Usage: importboard <board.json> [name]" }
@@ -156,7 +164,7 @@ fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long =
     config.rememberVault()
     val backups = Backups(database, config.dataDir.resolve("backups")).also { it.start() }
     val store = BoardStore(database)
-    val accounts = Accounts(database, groupPasswordFile = config.groupPasswordFile)
+    val accounts = Accounts(database, groupPasswordFile = config.groupPasswordFile, groupOpensAccountsFile = config.groupOpensAccountsFile)
     val vault = VaultWriter(config.vaultDir, store, vaultDebounceMillis)
     store.addListener(vault::schedule)
     vault.rebuildAllAsync()
