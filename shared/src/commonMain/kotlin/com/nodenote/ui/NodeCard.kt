@@ -54,12 +54,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -104,12 +108,22 @@ fun NodeCard(node: Node, state: AppState) {
     val k = state.zoom * node.scale
     val tint = state.lens.colorOf(node)?.let { Color(it) }
     val receded = state.zoom < AREA_FAR_ZOOM && !selected && state.shownProject.areaOf(node) != null
+    // The overview draws the card larger around its centre, for the whole title, as far as the
+    // cards around it leave room; nothing saved changes.
+    val overview = k < FAR_ZOOM && state.editingNodeId != node.id
+    val nodes = state.shownProject.nodes
+    val grow = if (overview) remember(node.x, node.y, node.width, node.height, nodes) { overviewGrowth(node, nodes) } else Offset.Zero
+    val drawnWidth = (node.width + grow.x * 2f) / node.scale
+    val drawnHeight = (node.height + grow.y * 2f) / node.scale
 
     Box(
         Modifier
             .offset {
                 val screenPos = state.worldToScreen(Offset(node.x, node.y))
-                IntOffset(screenPos.x.roundToInt(), screenPos.y.roundToInt())
+                IntOffset(
+                    (screenPos.x - grow.x * state.zoom * density).roundToInt(),
+                    (screenPos.y - grow.y * state.zoom * density).roundToInt(),
+                )
             }
             .graphicsLayer {
                 scaleX = k
@@ -117,7 +131,7 @@ fun NodeCard(node: Node, state: AppState) {
                 transformOrigin = TransformOrigin(0f, 0f)
                 alpha = if (receded) 0.5f else 1f
             }
-            .size((node.width / node.scale).dp, (node.height / node.scale).dp)
+            .size(drawnWidth.dp, drawnHeight.dp)
             .shadow(if (selected) 10.dp else 4.dp, shape)
             .background(tint?.copy(alpha = 0.22f)?.compositeOver(PanelBackgroundRaised) ?: PanelBackgroundRaised, shape)
             .border(
@@ -174,30 +188,19 @@ fun NodeCard(node: Node, state: AppState) {
         // Zoomed far out (a wide board on a phone): drop the details and blow the
         // title up so it stays readable (~9sp × the card's scale on screen, so big
         // nodes stay big).
-        if (k < FAR_ZOOM && state.editingNodeId != node.id) {
-            // Only as many whole lines as the card has room for (ending in "…"), and a smaller
-            // title when not even one fits, so text is never cut through the middle of a line.
-            val room = node.height / node.scale - 16f
-            var lineHeight = (10.5f / state.zoom).coerceAtMost(46f)
-            var fontSize = (9f / state.zoom).coerceAtMost(40f)
-            if (room < lineHeight) {
-                val fit = (room / lineHeight).coerceAtLeast(0.3f)
-                lineHeight *= fit
-                fontSize *= fit
+        if (overview) {
+            val title = node.title.ifBlank { "(untitled)" }
+            // The whole title, always: as large as the overview wants, or smaller if it needs the room.
+            val measurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val fit = remember(title, drawnWidth, drawnHeight, density.density) {
+                largestFontThatFits(measurer, density, title, drawnWidth, drawnHeight)
             }
-            val lines = (room / lineHeight).toInt().coerceIn(1, 3)
-            Row(Modifier.fillMaxSize().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(fontSize.coerceAtMost(40f).dp).background(tint ?: node.status.takeIf { it != NodeStatus.None }?.color ?: typeDef.color, CircleShape))
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    node.title.ifBlank { "(untitled)" },
-                    fontSize = fontSize.sp,
-                    lineHeight = lineHeight.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
-                    maxLines = lines,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            val fontSize = minOf((FAR_TEXT / state.zoom).coerceAtMost(40f), fit)
+            Row(Modifier.fillMaxSize().padding(FAR_PADDING.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size((fontSize * FAR_DOT).dp).background(tint ?: node.status.takeIf { it != NodeStatus.None }?.color ?: typeDef.color, CircleShape))
+                Spacer(Modifier.width((fontSize * FAR_DOT_GAP).dp))
+                Text(title, style = overviewTitleStyle(fontSize))
             }
             return@Box
         }
@@ -254,6 +257,56 @@ fun NodeCard(node: Node, state: AppState) {
 
 /** Below this on-screen scale, cards switch to the big-title "overview" rendering. */
 private const val FAR_ZOOM = 0.55f
+
+/** How much larger the overview draws a card than its real size, with room around it. */
+private const val FAR_GROW_WIDTH = 1.25f
+private const val FAR_GROW_HEIGHT = 1.5f
+
+/** World units to add on each side of [node] in the overview: half the gap to a neighbour at most, as it grows too. */
+private fun overviewGrowth(node: Node, nodes: List<Node>): Offset {
+    var x = node.width * (FAR_GROW_WIDTH - 1f) / 2f
+    var y = node.height * (FAR_GROW_HEIGHT - 1f) / 2f
+    for (other in nodes) {
+        if (other.id == node.id) continue
+        val gapX = maxOf(other.x - (node.x + node.width), node.x - (other.x + other.width))
+        val gapY = maxOf(other.y - (node.y + node.height), node.y - (other.y + other.height))
+        if (gapY < 0f) x = minOf(x, gapX.coerceAtLeast(0f) / 2f)
+        if (gapX < 0f) y = minOf(y, gapY.coerceAtLeast(0f) / 2f)
+    }
+    return Offset(x, y)
+}
+
+/** The overview title's size on screen when it has the room, before the card's own scale. */
+private const val FAR_TEXT = 7.5f
+private const val FAR_PADDING = 6f
+private const val FAR_DOT = 0.6f
+private const val FAR_DOT_GAP = 0.35f
+
+private fun overviewTitleStyle(fontSize: Float) = TextStyle(
+    fontSize = fontSize.sp,
+    lineHeight = (fontSize * 1.15f).sp,
+    fontWeight = FontWeight.SemiBold,
+    color = TextPrimary,
+)
+
+/** The largest overview font (card units) at which all of [title] fits a card drawn at this size. */
+private fun largestFontThatFits(measurer: TextMeasurer, density: Density, title: String, width: Float, height: Float): Float {
+    var font = 40f
+    while (font > 4f) {
+        val textWidth = width - FAR_PADDING * 2 - font * (FAR_DOT + FAR_DOT_GAP)
+        if (textWidth > 0f) {
+            val measured = measurer.measure(
+                title,
+                overviewTitleStyle(font),
+                constraints = Constraints(maxWidth = (textWidth * density.density).toInt()),
+                density = density,
+            )
+            if (measured.size.height <= (height - FAR_PADDING * 2) * density.density) return font
+        }
+        font *= 0.92f
+    }
+    return font
+}
 
 /** Header (type, private, status, ratings), the full title, and a one-line description. Reports its height so the card fits it. */
 @Composable
