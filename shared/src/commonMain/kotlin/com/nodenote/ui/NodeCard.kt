@@ -175,16 +175,27 @@ fun NodeCard(node: Node, state: AppState) {
         // title up so it stays readable (~9sp × the card's scale on screen, so big
         // nodes stay big).
         if (k < FAR_ZOOM && state.editingNodeId != node.id) {
+            // Only as many whole lines as the card has room for (ending in "…"), and a smaller
+            // title when not even one fits, so text is never cut through the middle of a line.
+            val room = node.height / node.scale - 16f
+            var lineHeight = (10.5f / state.zoom).coerceAtMost(46f)
+            var fontSize = (9f / state.zoom).coerceAtMost(40f)
+            if (room < lineHeight) {
+                val fit = (room / lineHeight).coerceAtLeast(0.3f)
+                lineHeight *= fit
+                fontSize *= fit
+            }
+            val lines = (room / lineHeight).toInt().coerceIn(1, 3)
             Row(Modifier.fillMaxSize().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size((10f / state.zoom).coerceAtMost(40f).dp).background(tint ?: node.status.takeIf { it != NodeStatus.None }?.color ?: typeDef.color, CircleShape))
+                Box(Modifier.size(fontSize.coerceAtMost(40f).dp).background(tint ?: node.status.takeIf { it != NodeStatus.None }?.color ?: typeDef.color, CircleShape))
                 Spacer(Modifier.width(6.dp))
                 Text(
                     node.title.ifBlank { "(untitled)" },
-                    fontSize = (9f / state.zoom).coerceAtMost(40f).sp,
-                    lineHeight = (10.5f / state.zoom).coerceAtMost(46f).sp,
+                    fontSize = fontSize.sp,
+                    lineHeight = lineHeight.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary,
-                    maxLines = 3,
+                    maxLines = lines,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
