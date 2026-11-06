@@ -84,6 +84,14 @@ on the new base). Messages are separate rows with a global `seq`; clients long-p
 - Git Bash rewrites args like `/nodenote` into `C:/Program Files/Git/nodenote` — run
   `tailscale serve/funnel --set-path` from PowerShell.
 
+## Related notes
+A card's Details tab can list notes from outside the board (`server/.../RelatedNotes.kt`, `shared/.../ui/RelatedSection.kt`).
+Off unless `<data>/related.txt` exists (Ben's: real server only, never the test one; it names one account and the folders).
+Index, pins and dismissals are in `<data>/related-index.db`, apart from the boards and safe to delete; it only reads the
+folders and rebuilds itself every 15 minutes. Only the named account sees it, and only on a session signed in with its own
+password (`sessions.own_password`, schema v4), so the shared group password opens the boards but not this. Search runs on
+this computer; nothing is sent out.
+
 ## Gotchas
 - `pointerInput` must be keyed on the `AppState` (not `Unit`) — tabs swap AppState instances,
   and a `Unit` key freezes handlers onto the old one (pan/zoom went dead).

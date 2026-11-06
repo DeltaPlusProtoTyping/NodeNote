@@ -168,12 +168,20 @@ fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long =
     val vault = VaultWriter(config.vaultDir, store, vaultDebounceMillis)
     store.addListener(vault::schedule)
     vault.rebuildAllAsync()
+    // Optional, and never a reason not to start.
+    val related = try {
+        RelatedConfig.load(config.relatedFile)?.let { RelatedNotes(it, config.relatedIndexFile) }?.also { it.start() }
+    } catch (e: Exception) {
+        log.warn("Related notes are off: ${e.message}")
+        null
+    }
 
     monitor.subscribe(ApplicationStopping) {
         runBlocking { vault.flush() }
     }
     monitor.subscribe(ApplicationStopped) {
         vault.close()
+        related?.close()
         backups.close()
         database.close()
     }
@@ -246,7 +254,7 @@ fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long =
     }
 
     routing {
-        apiRoutes(store, vault, config, accounts)
+        apiRoutes(store, vault, config, accounts, related)
         // The Android app for testers: no sign-in (it's how they get the app in the first place).
         get("/download/NodeNote.apk") {
             val apk = config.androidApk.toFile()

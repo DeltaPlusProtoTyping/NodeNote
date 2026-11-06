@@ -11,6 +11,9 @@ import com.nodenote.api.LoginResponse
 import com.nodenote.api.MessageUpdate
 import com.nodenote.api.PatchRequest
 import com.nodenote.api.PatchResponse
+import com.nodenote.api.RelatedDoc
+import com.nodenote.api.RelatedResults
+import com.nodenote.api.RelatedStatus
 import com.nodenote.api.ServerInfo
 import com.nodenote.api.SyncResponse
 import com.nodenote.local.DeviceBoards
@@ -54,6 +57,11 @@ interface BoardApi {
     suspend fun historyEntry(boardId: String, entryId: Long): BoardSnapshot
     /** Other people's chats on my cards with seq > [since]. */
     suspend fun replies(since: Long): List<Reply>
+    /** Notes from outside the board for a card: whether this account gets them, the notes, one note in full, pin or dismiss. */
+    suspend fun relatedStatus(): RelatedStatus
+    suspend fun related(boardId: String, nodeId: String): RelatedResults
+    suspend fun relatedDoc(id: Long): RelatedDoc
+    suspend fun markRelated(boardId: String, nodeId: String, docId: Long, state: String)
     fun close()
 }
 
@@ -102,6 +110,10 @@ class DeviceApi(private val boards: DeviceBoards, private val userName: () -> St
     override suspend fun history(boardId: String): List<HistoryEntry> = emptyList()
     override suspend fun historyEntry(boardId: String, entryId: Long): BoardSnapshot = throw BoardMissingException(boardId)
     override suspend fun replies(since: Long): List<Reply> = emptyList()
+    override suspend fun relatedStatus() = RelatedStatus()
+    override suspend fun related(boardId: String, nodeId: String) = RelatedResults()
+    override suspend fun relatedDoc(id: Long): RelatedDoc = throw IllegalStateException("Boards on this device have no related notes")
+    override suspend fun markRelated(boardId: String, nodeId: String, docId: Long, state: String) = Unit
     override fun close() = Unit
 
     private fun noAccounts(): Nothing = throw IllegalStateException("Boards on this device don't use accounts")

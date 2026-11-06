@@ -230,6 +230,8 @@ private fun NodeEditor(state: AppState, node: Node) {
     HorizontalDivider(color = PanelBorder)
     ConnectionsSection(state, node)
 
+    RelatedSection(state, node)
+
     HorizontalDivider(color = PanelBorder)
     OutlinedButton(
         onClick = { state.deleteNode(node.id) },

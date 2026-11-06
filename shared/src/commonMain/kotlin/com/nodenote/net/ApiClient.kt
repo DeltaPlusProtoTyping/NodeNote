@@ -3,6 +3,10 @@ package com.nodenote.net
 import com.nodenote.api.AccountInfo
 import com.nodenote.api.Activity
 import com.nodenote.api.HistoryEntry
+import com.nodenote.api.RelatedDoc
+import com.nodenote.api.RelatedMark
+import com.nodenote.api.RelatedResults
+import com.nodenote.api.RelatedStatus
 import com.nodenote.api.MembersRequest
 import com.nodenote.api.Reply
 import com.nodenote.api.ApiJson
@@ -133,6 +137,17 @@ class ApiClient(serverUrl: String) : BoardApi {
         http.get("$baseUrl/api/boards/$boardId/history/$entryId").body()
 
     override suspend fun replies(since: Long): List<Reply> = http.get("$baseUrl/api/replies") { parameter("since", since) }.body()
+
+    override suspend fun relatedStatus(): RelatedStatus = http.get("$baseUrl/api/related/status").body()
+
+    override suspend fun related(boardId: String, nodeId: String): RelatedResults =
+        http.get("$baseUrl/api/related/boards/$boardId/nodes/$nodeId").body()
+
+    override suspend fun relatedDoc(id: Long): RelatedDoc = http.get("$baseUrl/api/related/docs/$id").body()
+
+    override suspend fun markRelated(boardId: String, nodeId: String, docId: Long, state: String) {
+        http.post("$baseUrl/api/related/boards/$boardId/nodes/$nodeId/mark") { json(RelatedMark(docId, state)) }
+    }
 
     override fun close() = http.close()
 

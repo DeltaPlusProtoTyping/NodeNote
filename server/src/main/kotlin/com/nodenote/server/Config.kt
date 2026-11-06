@@ -33,6 +33,12 @@ data class ServerConfig(
     /** Present = the group password also signs in to real accounts by their name (see [Accounts]). */
     val groupOpensAccountsFile: Path get() = dataDir.resolve("group-opens-accounts.txt")
 
+    /** Settings for a card's related notes; without this file the feature is off (see [RelatedConfig]). */
+    val relatedFile: Path get() = dataDir.resolve("related.txt")
+
+    /** Their search index, pins and dismissals: apart from the boards, and safe to delete. */
+    val relatedIndexFile: Path get() = dataDir.resolve("related-index.db")
+
     /** The Android app testers download (`/download/NodeNote.apk`), when it's been put there. */
     val androidApk: Path get() = dataDir.resolve("downloads").resolve("NodeNote.apk")
 

@@ -168,9 +168,49 @@ val ApiJson: Json = Json {
 //   GET  /api/auth/me                -> AccountInfo
 //   POST /api/auth/password          ChangePasswordRequest -> 204
 //   POST /api/auth/username          ChangeUsernameRequest -> LoginResponse
+//   GET  /api/related/status                                   -> RelatedStatus
+//   GET  /api/related/boards/{id}/nodes/{node}                 -> RelatedResults
+//   POST /api/related/boards/{id}/nodes/{node}/mark  RelatedMark
+//   GET  /api/related/docs/{doc}                               -> RelatedDoc
 //
 // Every other /api call except /api/info needs `Authorization: Bearer <token>`.
 // The signed-in username is the author of everything that user posts.
+
+/**
+ * Whether this account can see related notes. All false = don't mention them. [needsOwnSignIn]:
+ * it's the right account, but signed in with a shared password.
+ */
+@Serializable
+data class RelatedStatus(val available: Boolean = false, val needsOwnSignIn: Boolean = false)
+
+@Serializable
+data class RelatedItem(
+    val id: Long,
+    val source: String,
+    val title: String,
+    val who: String = "",
+    val date: String = "",
+    val snippet: String = "",
+    val pinned: Boolean = false,
+)
+
+@Serializable
+data class RelatedResults(val items: List<RelatedItem> = emptyList())
+
+@Serializable
+data class RelatedDoc(
+    val id: Long,
+    val source: String,
+    val title: String,
+    val who: String = "",
+    val date: String = "",
+    val text: String = "",
+    val trimmed: Boolean = false,
+)
+
+/** [state]: "pin", "dismiss", or anything else to clear. */
+@Serializable
+data class RelatedMark(val docId: Long, val state: String)
 
 @Serializable
 data class LoginRequest(val username: String, val password: String)

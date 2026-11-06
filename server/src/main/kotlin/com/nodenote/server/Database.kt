@@ -140,7 +140,7 @@ class Database(file: Path) : AutoCloseable {
 
     companion object {
         /** Bump together with a new entry in [migrations]. */
-        const val SCHEMA_VERSION = 3
+        const val SCHEMA_VERSION = 4
 
         /** version → SQL that upgrades version-1 → version. Version 1 is the baseline above. */
         private val migrations: Map<Int, List<String>> = mapOf(
@@ -175,6 +175,8 @@ class Database(file: Path) : AutoCloseable {
                 )""",
                 "CREATE INDEX IF NOT EXISTS activity_at ON activity(at)",
             ),
+            // v4: whether a session came from the account's own password (not a shared one).
+            4 to listOf("ALTER TABLE sessions ADD COLUMN own_password INTEGER NOT NULL DEFAULT 0"),
         )
 
         private val LinkedIds = ListSerializer(String.serializer())
@@ -222,14 +224,21 @@ class Database(file: Path) : AutoCloseable {
     }
 
     @Synchronized
-    fun insertSession(tokenHash: String, username: String, now: Long) = update(
-        "INSERT INTO sessions(token_hash, username, created_at, last_seen) VALUES(?,?,?,?)",
+    fun insertSession(tokenHash: String, username: String, now: Long, ownPassword: Boolean = false) = update(
+        "INSERT INTO sessions(token_hash, username, created_at, last_seen, own_password) VALUES(?,?,?,?,?)",
     ) {
         setString(1, tokenHash)
         setString(2, username)
         setLong(3, now)
         setLong(4, now)
+        setInt(5, if (ownPassword) 1 else 0)
     }
+
+    /** True when this session was signed in with the account's own password. */
+    @Synchronized
+    fun sessionUsedOwnPassword(tokenHash: String): Boolean =
+        queryWith("SELECT own_password FROM sessions WHERE token_hash = ?", { setString(1, tokenHash) }) { it.getInt(1) == 1 }
+            .singleOrNull() == true
 
     /** (username, last_seen) for a session, or null. */
     @Synchronized

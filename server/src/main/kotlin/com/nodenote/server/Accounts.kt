@@ -57,18 +57,22 @@ class Accounts(
         val key = username.trim().lowercase()
         checkThrottle(key)
         val row = io { db.user(username.trim()) }
-        val viaGroup = row != null && row.second != GROUP_MEMBER && io { groupOpensAccounts() } &&
+        val own = row != null && verifyPassword(password, row.second)
+        val viaGroup = !own && row != null && row.second != GROUP_MEMBER && io { groupOpensAccounts() } &&
             io { groupHash() }?.let { verifyPassword(password, it) } == true
-        if (row == null || !(viaGroup || verifyPassword(password, row.second))) {
+        if (row == null || !(own || viaGroup)) {
             recordFailure(key)
             delay(failureDelayMillis)
             throw UnauthorizedException("Wrong username or password")
         }
         failures.remove(key)
         val token = newToken()
-        io { db.insertSession(hashToken(token), row.first, clock()) }
+        io { db.insertSession(hashToken(token), row.first, clock(), ownPassword = own) }
         return LoginResponse(token, row.first)
     }
+
+    /** True when [token]'s session signed in with the account's own password, not a shared one. */
+    suspend fun usedOwnPassword(token: String): Boolean = io { db.sessionUsedOwnPassword(hashToken(token)) }
 
     /** The username for a bearer token, or null if it isn't a live session. */
     suspend fun authenticate(token: String): String? {

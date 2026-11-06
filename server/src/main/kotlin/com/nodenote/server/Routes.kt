@@ -12,6 +12,9 @@ import com.nodenote.api.JoinRequest
 import com.nodenote.api.MembersRequest
 import com.nodenote.api.MessageUpdate
 import com.nodenote.api.PatchRequest
+import com.nodenote.api.RelatedMark
+import com.nodenote.api.RelatedResults
+import com.nodenote.api.RelatedStatus
 import com.nodenote.api.ServerInfo
 import com.nodenote.model.Message
 import io.ktor.http.ContentType
@@ -34,6 +37,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
@@ -44,7 +49,7 @@ const val SERVER_VERSION = "2.1.0"
  * The JSON API. Shapes and semantics are defined in core's `Api.kt`; this file is
  * only the HTTP plumbing — parameter parsing, 404s — around [BoardStore].
  */
-fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig, accounts: Accounts) {
+fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig, accounts: Accounts, related: RelatedNotes? = null) {
     route("/api") {
         install(RequireSignIn) { this.accounts = accounts }
 
@@ -165,6 +170,53 @@ fun Route.apiRoutes(store: BoardStore, vault: VaultWriter, config: ServerConfig,
             val id = call.parameters["id"].orEmpty()
             val update = call.receive<MessageUpdate>()
             call.respond(store.updateMessage(id, update, actor = call.user()) ?: throw NotFoundException("Unknown message: $id"))
+        }
+
+        // A card's related notes. Private to one account and to its own password: a shared password
+        // opens the boards, not this, and everyone else can't tell the feature exists.
+        route("/related") {
+            suspend fun ApplicationCall.notes(): RelatedNotes {
+                val notes = related?.takeIf { it.config.user.equals(user(), ignoreCase = true) } ?: throw NotFoundException("Not found")
+                if (!accounts.usedOwnPassword(token())) throw ForbiddenException("Sign in with your own password to see related notes")
+                response.header(HttpHeaders.CacheControl, "no-store")
+                return notes
+            }
+
+            get("/status") {
+                call.respond(
+                    when {
+                        related?.config?.user?.equals(call.user(), ignoreCase = true) != true -> RelatedStatus()
+                        accounts.usedOwnPassword(call.token()) -> RelatedStatus(available = true)
+                        else -> RelatedStatus(needsOwnSignIn = true)
+                    },
+                )
+            }
+            get("/boards/{id}/nodes/{node}") {
+                val notes = call.notes()
+                val project = (store.snapshot(call.boardId()) ?: boardNotFound(call.boardId())).project
+                val nodeId = call.parameters["node"].orEmpty()
+                val node = project.nodes.find { it.id == nodeId } ?: throw NotFoundException("Unknown card")
+                val linked = project.edges.mapNotNull { edge ->
+                    when (nodeId) {
+                        edge.fromNodeId -> edge.toNodeId
+                        edge.toNodeId -> edge.fromNodeId
+                        else -> null
+                    }
+                }.mapNotNull { id -> project.nodes.find { it.id == id }?.title }
+                call.respond(RelatedResults(withContext(Dispatchers.IO) { notes.search(call.boardId(), nodeId, node.title, linked) }))
+            }
+            post("/boards/{id}/nodes/{node}/mark") {
+                val notes = call.notes()
+                val mark = call.receive<RelatedMark>()
+                val found = withContext(Dispatchers.IO) { notes.mark(call.boardId(), call.parameters["node"].orEmpty(), mark.docId, mark.state) }
+                if (!found) throw NotFoundException("That note has gone")
+                call.respond(HttpStatusCode.NoContent)
+            }
+            get("/docs/{doc}") {
+                val notes = call.notes()
+                val id = call.parameters["doc"]?.toLongOrNull() ?: throw BadRequestException("Note id must be a number")
+                call.respond(withContext(Dispatchers.IO) { notes.doc(id) } ?: throw NotFoundException("That note has gone"))
+            }
         }
 
         post("/vault/rebuild") {
