@@ -349,7 +349,7 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                 )
             }
             // The rating shows on the selected card; the card's size already says how much it matters.
-            if ((node.importance > 0 || node.effort > 0) && node.id in state.selectedNodeIds) {
+            if (node.importance > 0 && node.id in state.selectedNodeIds) {
                 Spacer(Modifier.width(5.dp))
                 CardRating(state, node)
             }
@@ -412,7 +412,7 @@ private fun AssigneeBadge(name: String) {
     }
 }
 
-/** Importance and effort tags on the card; click them to re-rate. */
+/** The importance tag on the card; click it to re-rate. */
 @Composable
 private fun CardRating(state: AppState, node: Node) {
     var open by remember { mutableStateOf(false) }
@@ -421,9 +421,7 @@ private fun CardRating(state: AppState, node: Node) {
             Modifier.clip(RoundedCornerShape(4.dp)).clickable { open = true },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (node.importance > 0) ImportanceBadge(node.importance, size = 15.dp)
-            if (node.importance > 0 && node.effort > 0) Spacer(Modifier.width(3.dp))
-            EffortBadge(node.effort)
+            ImportanceBadge(node.importance, size = 15.dp)
         }
         RatingMenu(state, node.id, expanded = open, onDismiss = { open = false })
     }

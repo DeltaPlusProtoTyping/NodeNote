@@ -48,10 +48,9 @@ class LensTest {
     }
 
     @Test
-    fun importanceAndEffortUseTheBadgeScales() {
+    fun importanceUsesTheBadgeScale() {
         assertEquals(importanceArgb(8), Lens(board, ColorBy.Importance).colorOf(idea))
         assertNull(Lens(board, ColorBy.Importance).colorOf(noFix))
-        assertEquals(effortArgb(3), Lens(board, ColorBy.Effort).colorOf(idea))
         val legend = Lens(board, ColorBy.Importance).legend(board.nodes).map { it.label }
         assertEquals(listOf("7–8", "Not rated"), legend)
         // The type lens leaves every card as it is.

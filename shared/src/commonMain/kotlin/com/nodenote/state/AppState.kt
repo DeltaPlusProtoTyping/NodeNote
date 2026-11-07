@@ -30,7 +30,6 @@ import com.nodenote.model.Project
 import com.nodenote.model.areaOf
 import com.nodenote.model.areasInside
 import com.nodenote.model.cardsIn
-import com.nodenote.model.clampEffort
 import com.nodenote.model.clampImportance
 import com.nodenote.model.importanceForScale
 import com.nodenote.model.scaleForImportance
@@ -350,7 +349,7 @@ class AppState(val session: Session) {
 
     /** True when any modal is open — used to gate canvas/editing shortcuts. */
     val anyDialogOpen: Boolean
-        get() = exportDialogOpen || shortcutsOpen || newTypeKind != null || rateBoardOpen
+        get() = exportDialogOpen || shortcutsOpen || newTypeKind != null
 
     // ---- Right panel (dp). Resizable by dragging its inner border, collapsible. ----
 
@@ -359,9 +358,9 @@ class AppState(val session: Session) {
     var rightTab by mutableStateOf(RightTab.Chat)
 
     /** The three ways the Priorities tab answers "what now?". */
-    enum class PrioritySection(val label: String) { QuickWins("Quick wins"), Wins("Wins"), KeyDetails("Key details") }
+    enum class PrioritySection(val label: String) { OpenWork("Open work"), Wins("Wins"), KeyDetails("Key details") }
 
-    var prioritySection by mutableStateOf(PrioritySection.QuickWins)
+    var prioritySection by mutableStateOf(PrioritySection.OpenWork)
     var inspectorVisible by mutableStateOf(true)
     var inspectorWidth by mutableStateOf(380f)
         private set
@@ -938,11 +937,6 @@ class AppState(val session: Session) {
         val v = clampImportance(value)
         pushUndo()
         updateNode(id) { it.copy(importance = v).scaledAroundCenter(scaleForImportance(v)) }
-    }
-
-    fun setNodeEffort(id: String, value: Int) {
-        pushUndo()
-        updateNode(id) { it.copy(effort = clampEffort(value)) }
     }
 
     fun setNodePrivate(id: String, private: Boolean) {
@@ -1666,21 +1660,6 @@ class AppState(val session: Session) {
             lensCache?.let { if (it.project === p && it.by == colorBy) return it }
             return Lens(p, colorBy).also { lensCache = it }
         }
-
-    // ---- Rate by placing ----
-
-    /** The importance × effort board where cards are rated by dragging them into place. */
-    var rateBoardOpen by mutableStateOf(false)
-
-    /** Both ratings at once (one undo step): what dropping a card on the rating board does. */
-    fun rateNode(id: String, importance: Int, effort: Int) {
-        val node = project.nodes.find { it.id == id } ?: return
-        val i = clampImportance(importance)
-        val e = clampEffort(effort)
-        if (node.importance == i && node.effort == e) return
-        pushUndo()
-        updateNode(id) { it.copy(importance = i, effort = e).scaledAroundCenter(scaleForImportance(i)) }
-    }
 
     // ---- Chat ----
     // All live messages of this board, oldest first (deleted ones are dropped).

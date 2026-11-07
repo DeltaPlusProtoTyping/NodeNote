@@ -140,9 +140,6 @@ private fun NodeEditor(state: AppState, node: Node) {
     FieldLabel("Importance — how much it matters")
     ImportancePicker(node.importance, onChange = { v -> state.setNodeImportance(node.id, v) })
 
-    FieldLabel("Effort — 1 an afternoon · 5 a few weeks · 10 a major project")
-    EffortPicker(node.effort, onChange = { v -> state.setNodeEffort(node.id, v) })
-
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Pill(
             if (node.isPrivate) "Private: hidden when presenting" else "Make private",

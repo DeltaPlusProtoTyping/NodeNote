@@ -48,7 +48,6 @@ import com.nodenote.model.Node
 import com.nodenote.model.NodeCategory
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.areaOf
-import com.nodenote.model.pick
 import com.nodenote.state.AppState
 import com.nodenote.theme.Accent
 import com.nodenote.theme.DangerRed
@@ -173,7 +172,7 @@ private fun MoreChip(state: AppState, node: Node) {
         DropdownMenu(expanded = open == MoreMenu.Main, onDismissRequest = close) {
             val def = state.nodeTypeOf(node.type)
             MoreRow("Type: ${def.label}") { open = MoreMenu.Type }
-            MoreRow(if (node.importance == 0 && node.effort == 0) "Rate importance and effort" else "Rating: ${node.importance.takeIf { it > 0 } ?: "?"} / effort ${node.effort.takeIf { it > 0 } ?: "?"}") { open = MoreMenu.Rate }
+            MoreRow(if (node.importance == 0) "Rate importance" else "Importance: ${node.importance}") { open = MoreMenu.Rate }
             MoreRow("Size") { open = MoreMenu.Size }
             HorizontalDivider(color = PanelBorder)
             MoreRow("Add a child card  (Tab)") { close(); state.addChildNode(node.id) }
@@ -359,7 +358,7 @@ private fun SizeMenu(state: AppState, node: Node, expanded: Boolean, onDismiss: 
     }
 }
 
-/** Importance and effort for one node, side by side; stays open so both can be set. */
+/** Importance for one node. */
 @Composable
 fun RatingMenu(state: AppState, nodeId: String, expanded: Boolean, onDismiss: () -> Unit) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
@@ -368,23 +367,6 @@ fun RatingMenu(state: AppState, nodeId: String, expanded: Boolean, onDismiss: ()
             Text("Importance: how much it matters", fontSize = 11.sp, color = TextSecondary)
             ImportancePicker(node.importance, onChange = { state.setNodeImportance(nodeId, it) }, cell = 22.dp)
             Text("1 minor · 10 critical · 11-12 urgent. The card's size follows.", fontSize = 10.sp, color = TextFaint)
-            Spacer(Modifier.height(2.dp))
-            Text("Effort: how big a job", fontSize = 11.sp, color = TextSecondary)
-            EffortPicker(node.effort, onChange = { state.setNodeEffort(nodeId, it) }, cell = 22.dp)
-            Text("1 an afternoon · 5 a few weeks · 10 a major project", fontSize = 10.sp, color = TextFaint)
-            node.pick?.let { pick ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(pick.label.removeSuffix("s"), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = pickColor(pick))
-                    Text(": ${pick.hint}", fontSize = 11.sp, color = TextSecondary)
-                }
-            }
         }
     }
-}
-
-fun pickColor(pick: com.nodenote.model.Pick): Color = when (pick) {
-    com.nodenote.model.Pick.QuickWin -> Color(0xFF53C27C)
-    com.nodenote.model.Pick.BigBet -> Color(0xFF5B9CFF)
-    com.nodenote.model.Pick.FillIn -> Color(0xFFE5B25B)
-    com.nodenote.model.Pick.Rethink -> Color(0xFF9AA5B1)
 }

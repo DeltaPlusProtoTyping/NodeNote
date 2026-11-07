@@ -57,7 +57,7 @@ data class Node(
     val createdBy: String = "",
     /** Extra words that should route thoughts here when sorting (free text, e.g. "VF-2, spindle, warm-up"). */
     val keywords: String = "",
-    /** How big a job this is: 0 = not rated, otherwise 1 (an afternoon) … 10 (a major project). With [importance] it finds the quick wins. */
+    /** Retired from the app: nothing shows or sets it now. Kept so saved boards and older clients keep their values. */
     val effort: Int = 0,
     /** Kept off the screen while presenting and out of exports — true, but not for everyone's eyes. */
     @SerialName("private") val isPrivate: Boolean = false,
@@ -80,11 +80,5 @@ data class Node(
 /** Importance of nodes and messages: 1 (minor) … 10 (critical); 11–12 are for urgent things. */
 const val MAX_IMPORTANCE = 12
 
-/** Effort: 1 (an afternoon) … 10 (a major project). */
-const val MAX_EFFORT = 10
-
 /** Importance is always 0 (unrated) or 1..[MAX_IMPORTANCE]. */
 fun clampImportance(value: Int): Int = value.coerceIn(0, MAX_IMPORTANCE)
-
-/** Effort is always 0 (unrated) or 1..[MAX_EFFORT]. */
-fun clampEffort(value: Int): Int = value.coerceIn(0, MAX_EFFORT)

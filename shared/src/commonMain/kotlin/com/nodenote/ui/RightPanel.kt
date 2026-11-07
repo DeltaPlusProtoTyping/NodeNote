@@ -48,7 +48,7 @@ import com.nodenote.theme.color
 
 /**
  * Right side of the window: Chat (the main event), Sort (the unsorted pile),
- * Priorities (quick wins, wins, key details), and Details (the node inspector).
+ * Priorities (open work, wins, key details), and Details (the node inspector).
  */
 @Composable
 fun RightPanel(state: AppState, modifier: Modifier = Modifier, compact: Boolean = false) {
@@ -105,7 +105,7 @@ private fun MoreViewsButton(state: AppState) {
                 onClick = { state.rightTab = AppState.RightTab.Sort; open = false },
             )
             DropdownMenuItem(
-                text = { Text("Priorities: quick wins and wins", fontSize = 12.sp) },
+                text = { Text("Priorities: open work and wins", fontSize = 12.sp) },
                 onClick = { state.rightTab = AppState.RightTab.Priorities; open = false },
             )
         }

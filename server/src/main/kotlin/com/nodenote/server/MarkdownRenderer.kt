@@ -7,11 +7,8 @@ import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
 import com.nodenote.model.NodeLinkRegex
 import com.nodenote.model.NodeStatus
-import com.nodenote.model.Pick
 import com.nodenote.model.Project
 import com.nodenote.model.areaOf
-import com.nodenote.model.isOpenWork
-import com.nodenote.model.pick
 import com.nodenote.model.edgeType
 import com.nodenote.model.nodeType
 import com.nodenote.model.privateNodeIds
@@ -268,13 +265,12 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
             val openTable = open.takeIf { it.isNotEmpty() }?.let { nodes ->
                 buildString {
                     append("## Open work\n\n")
-                    append("| Node | Type | Status | Importance | Effort | Owner | Msgs |\n")
-                    append("|---|---|---|---:|---:|---|---:|\n")
+                    append("| Node | Type | Status | Importance | Owner | Msgs |\n")
+                    append("|---|---|---|---:|---|---:|\n")
                     for (n in nodes) {
                         val importance = if (n.importance > 0) n.importance.toString() else ""
-                        val effort = if (n.effort > 0) n.effort.toString() else ""
                         append("| ${link(n, inTable = true)} | ${plain(project.nodeType(n.type).label)} | ${n.status.label} ")
-                        append("| $importance | $effort | ${plain(n.owner)} | ${byHome[n.id].orEmpty().size} |\n")
+                        append("| $importance | ${plain(n.owner)} | ${byHome[n.id].orEmpty().size} |\n")
                     }
                 }.trimEnd()
             }
@@ -286,7 +282,6 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                         val extras = buildList {
                             if (n.status != NodeStatus.None) add(n.status.label)
                             if (n.importance > 0) add("★${n.importance}")
-                            if (n.effort > 0) add("effort ${n.effort}")
                             if (isPrivate(n)) add("private")
                             byHome[n.id]?.size?.let { add(if (it == 1) "1 message" else "$it messages") }
                         }
@@ -299,9 +294,6 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .sortedWith(compareByDescending<Message> { it.importance }.thenByDescending { it.createdAt })
                 .take(BOARD_KEY_DETAILS)
             val recent = live.asReversed().take(RECENT_ACTIVITY)
-            val quickWins = project.nodes.filter { it.isOpenWork && it.pick == Pick.QuickWin }
-                .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.effort }.thenBy { it.title.lowercase() })
-                .map { n -> "- ${link(n)} · importance ${n.importance}, effort ${n.effort}" + (if (isPrivate(n)) " · private" else "") }
             val wins = project.nodes.filter { it.status == NodeStatus.Solved }
                 .sortedWith(compareByDescending<Node> { it.solvedAt }.thenBy { it.title.lowercase() })
                 .map { n ->
@@ -327,7 +319,6 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 inbox.takeIf { it.isNotEmpty() }?.let {
                     "Unfiled: ${wikiLink("$folder/${VaultNames.INBOX}", VaultNames.INBOX)} (${it.size})"
                 },
-                section("Quick wins", quickWins),
                 openTable,
                 section("Wins", wins),
                 allNodes,

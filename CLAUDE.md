@@ -109,7 +109,8 @@ this computer; nothing is sent out.
   measuring fonts differently can't ping-pong. A card's size IS its importance (0–12; 11–12 urgent):
   `core/.../model/ImportanceSize.kt` maps levels to scales, rating resizes around the centre,
   Size presets / corner drag set the importance, and `AppState.sizeCardsByImportance` puts a board
-  in step on load. Never set `scale` without the matching importance. Effort stays 1–10.
+  in step on load. Never set `scale` without the matching importance. Effort is retired from the
+  app and vault tables: `Node.effort` stays in the saved format (phone apps still send it), nothing here shows or sets it.
 - Exports: `core/.../export/MapScene.kt` builds one vector `Scene` (Helvetica metrics) that
   `SvgWriter`/`PdfWriter` write out and `MapExporter` rasterizes for PNG and the dialog preview.
   Private nodes are left out unless "Include private nodes" is ticked.

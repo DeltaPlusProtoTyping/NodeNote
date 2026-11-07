@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nodenote.model.MAX_EFFORT
 import com.nodenote.model.MAX_IMPORTANCE
 import com.nodenote.model.importanceArgb
 import com.nodenote.model.MessageKind
@@ -94,39 +93,10 @@ fun ImportanceBadge(importance: Int, modifier: Modifier = Modifier, size: Dp = 1
     }
 }
 
-/** Effort reads the other way round: 1–3 quick (green), 4–6 a real project (amber), 7–10 a big one (violet). */
-fun effortColor(effort: Int): Color = when (effort) {
-    0 -> TextFaint
-    1, 2, 3 -> Color(0xFF53C27C)
-    4, 5, 6 -> Color(0xFFE5B25B)
-    else -> Color(0xFF9B7BFF)
-}
-
-/** Outlined "E3" tag for a node's effort; nothing for 0. */
-@Composable
-fun EffortBadge(effort: Int, modifier: Modifier = Modifier, height: Dp = 15.dp) {
-    if (effort <= 0) return
-    val color = effortColor(effort)
-    Box(
-        modifier
-            .height(height)
-            .clip(RoundedCornerShape(4.dp))
-            .border(1.dp, color.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 3.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("E$effort", style = tightText((height.value * 0.56f).sp, FontWeight.Bold, color))
-    }
-}
-
 /** A row of cells "–, 1 … 12" (11–12 urgent); clicking the selected value again clears it. */
 @Composable
 fun ImportancePicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) =
     ScalePicker(value, onChange, cell, MAX_IMPORTANCE, ::importanceColor)
-
-/** The same kind of row, 1–10, for effort. */
-@Composable
-fun EffortPicker(value: Int, onChange: (Int) -> Unit, cell: Dp = 20.dp) = ScalePicker(value, onChange, cell, MAX_EFFORT, ::effortColor)
 
 @Composable
 private fun ScalePicker(value: Int, onChange: (Int) -> Unit, cell: Dp, max: Int, colorFor: (Int) -> Color) {

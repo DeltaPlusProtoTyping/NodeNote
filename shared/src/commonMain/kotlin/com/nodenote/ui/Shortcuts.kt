@@ -50,10 +50,6 @@ fun handleShortcut(workspace: Workspace, event: KeyEvent): Boolean {
             state.closeExportDialog()
             true
         }
-        event.key == Key.Escape && state.rateBoardOpen -> {
-            state.rateBoardOpen = false
-            true
-        }
         event.key == Key.Escape && state.drawingArea -> {
             state.cancelAreaDrawing()
             true

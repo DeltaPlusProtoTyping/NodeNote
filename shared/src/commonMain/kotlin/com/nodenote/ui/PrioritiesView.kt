@@ -37,9 +37,7 @@ import com.nodenote.model.Message
 import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
-import com.nodenote.model.Pick
 import com.nodenote.model.isOpenWork
-import com.nodenote.model.pick
 import com.nodenote.state.AppState
 import com.nodenote.theme.Accent
 import com.nodenote.theme.PanelBorder
@@ -49,8 +47,7 @@ import com.nodenote.theme.TextSecondary
 import com.nodenote.theme.color
 
 /**
- * The Priorities tab: what to work on (open work sorted on a PICK chart by
- * importance × effort, quick wins first), what got done (solved nodes, dated —
+ * The Priorities tab: what to work on (open work, most important first), what got done (solved nodes, dated —
  * the list that earns trust), and the key details from the chat.
  */
 @Composable
@@ -66,83 +63,46 @@ fun PrioritiesView(state: AppState, modifier: Modifier = Modifier) {
         }
         HorizontalDivider(color = PanelBorder)
         when (state.prioritySection) {
-            AppState.PrioritySection.QuickWins -> PickView(state, Modifier.fillMaxSize())
+            AppState.PrioritySection.OpenWork -> OpenWorkView(state, Modifier.fillMaxSize())
             AppState.PrioritySection.Wins -> WinsView(state, Modifier.fillMaxSize())
             AppState.PrioritySection.KeyDetails -> KeyDetailsView(state, Modifier.fillMaxSize())
         }
     }
 }
 
-// ---- Quick wins (PICK chart) ----
+// ---- Open work ----
 
-/** Work-item types that should get an importance and effort even with no status set. */
-private val RateableTypes = setOf("Issue", "Improvement", "Idea", "ActionItem", "Project", "Decision")
+/** Work-item types that count as open work even with no status set. */
+private val WorkTypes = setOf("Issue", "Improvement", "Idea", "ActionItem", "Project", "Decision")
 
-/** Open work that should carry an importance and an effort: what the PICK chart and the rating board show. */
-internal fun rateableCards(state: AppState): List<Node> = state.shownProject.nodes.filter {
-    it.isOpenWork && (it.status.isActive || it.type in RateableTypes || it.importance > 0 || it.effort > 0)
+private fun openWork(state: AppState): List<Node> = state.shownProject.nodes.filter {
+    it.isOpenWork && (it.status.isActive || it.type in WorkTypes || it.importance > 0)
 }
 
 @Composable
-private fun PickView(state: AppState, modifier: Modifier) {
-    val open = rateableCards(state)
-    val byPick = open.filter { it.pick != null }.groupBy { it.pick!! }
-    val unrated = open.filter { it.pick == null }
-    var only by remember { mutableStateOf<Pick?>(null) }
+private fun OpenWorkView(state: AppState, modifier: Modifier) {
+    val (rated, unrated) = openWork(state).partition { it.importance > 0 }
+    val ranked = rated.sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.title.lowercase() })
     val clipboard = LocalClipboardManager.current
 
     Column(modifier) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Importance × effort. Click a box to see just that group.",
-                    fontSize = 11.sp,
-                    color = TextFaint,
-                    modifier = Modifier.weight(1f),
-                )
-                CompactOutlinedButton("Rate by placing", onClick = { state.rateBoardOpen = true })
-                Spacer(Modifier.width(6.dp))
-                if (byPick.isNotEmpty()) {
-                    CompactOutlinedButton("Copy as list", onClick = {
-                        clipboard.setText(AnnotatedString(pickListText(state, byPick)))
-                        state.status = "Copied the priority list (private nodes left out)"
-                    })
-                }
-            }
-            // The PICK chart as a 2×2 of counts.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Spacer(Modifier.width(64.dp))
-                Text("Small job", fontSize = 10.sp, color = TextFaint, modifier = Modifier.weight(1f))
-                Text("Big job", fontSize = 10.sp, color = TextFaint, modifier = Modifier.weight(1f))
-            }
-            listOf("Important" to listOf(Pick.QuickWin, Pick.BigBet), "Less" to listOf(Pick.FillIn, Pick.Rethink)).forEach { (rowLabel, picks) ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(rowLabel, fontSize = 10.sp, color = TextFaint, modifier = Modifier.width(58.dp))
-                    picks.forEach { pick ->
-                        PickCell(pick, byPick[pick].orEmpty().size, selected = only == pick, Modifier.weight(1f)) {
-                            only = if (only == pick) null else pick
-                        }
-                    }
-                }
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Most important first.", fontSize = 11.sp, color = TextFaint, modifier = Modifier.weight(1f))
+            if (ranked.isNotEmpty()) {
+                CompactOutlinedButton("Copy as list", onClick = {
+                    clipboard.setText(AnnotatedString(openWorkText(state, ranked)))
+                    state.status = "Copied the priority list (private nodes left out)"
+                })
             }
         }
         HorizontalDivider(color = PanelBorder)
         LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-            for (pick in Pick.entries) {
-                if (only != null && only != pick) continue
-                val group = byPick[pick].orEmpty()
-                    .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.effort }.thenBy { it.title.lowercase() })
-                if (group.isEmpty()) continue
-                item(key = "h-$pick") { GroupHeader(pick.label, pick.hint, group.size, pickColor(pick)) }
-                items(group, key = { it.id }) { PriorityRow(state, it) }
-            }
-            if (only == null && unrated.isNotEmpty()) {
-                item(key = "h-unrated") {
-                    GroupHeader("Needs rating", "give each an importance and an effort to place it", unrated.size, TextSecondary)
-                }
+            items(ranked, key = { it.id }) { PriorityRow(state, it) }
+            if (unrated.isNotEmpty()) {
+                item(key = "h-unrated") { GroupHeader("Not rated", "give each an importance to rank it", unrated.size, TextSecondary) }
                 items(unrated.sortedBy { it.title.lowercase() }, key = { it.id }) { PriorityRow(state, it) }
             }
-            if (byPick.isEmpty() && unrated.isEmpty()) {
+            if (ranked.isEmpty() && unrated.isEmpty()) {
                 item {
                     Text(
                         "No open work yet. Issues, ideas and improvements show up here once they're on the map.",
@@ -159,22 +119,6 @@ private fun PickView(state: AppState, modifier: Modifier) {
 }
 
 @Composable
-private fun PickCell(pick: Pick, count: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val color = pickColor(pick)
-    Column(
-        modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(color.copy(alpha = if (selected) 0.26f else 0.10f))
-            .border(1.dp, color.copy(alpha = if (selected) 0.9f else 0.35f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
-    ) {
-        Text(count.toString(), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-        Text(pick.label, fontSize = 11.sp, color = color, maxLines = 1)
-    }
-}
-
-@Composable
 private fun GroupHeader(title: String, hint: String, count: Int, color: Color) {
     Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -185,7 +129,7 @@ private fun GroupHeader(title: String, hint: String, count: Int, color: Color) {
     }
 }
 
-/** One node: type, title, status; its ratings on the right (click to change). Clicking the row shows it on the map. */
+/** One node: type, title, status; its importance on the right (click to change). Clicking the row shows it on the map. */
 @Composable
 private fun PriorityRow(state: AppState, node: Node, trailing: (@Composable () -> Unit)? = null) {
     var rateOpen by remember { mutableStateOf(false) }
@@ -225,17 +169,15 @@ private fun PriorityRow(state: AppState, node: Node, trailing: (@Composable () -
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(5.dp))
-                        .border(1.dp, if (node.pick == null) Accent.copy(alpha = 0.6f) else Color.Transparent, RoundedCornerShape(5.dp))
+                        .border(1.dp, if (node.importance == 0) Accent.copy(alpha = 0.6f) else Color.Transparent, RoundedCornerShape(5.dp))
                         .clickable { rateOpen = true }
                         .padding(3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (node.importance == 0 && node.effort == 0) {
+                    if (node.importance == 0) {
                         Text("Rate", fontSize = 11.sp, color = Accent, modifier = Modifier.padding(horizontal = 4.dp))
                     } else {
-                        ImportanceBadge(node.importance, size = 18.dp, showUnrated = true)
-                        Spacer(Modifier.width(3.dp))
-                        if (node.effort > 0) EffortBadge(node.effort, height = 18.dp) else Text("E?", fontSize = 10.sp, color = TextFaint)
+                        ImportanceBadge(node.importance, size = 18.dp)
                     }
                 }
                 RatingMenu(state, node.id, expanded = rateOpen, onDismiss = { rateOpen = false })
@@ -244,16 +186,9 @@ private fun PriorityRow(state: AppState, node: Node, trailing: (@Composable () -
     }
 }
 
-private fun pickListText(state: AppState, byPick: Map<Pick, List<Node>>): String = buildString {
+private fun openWorkText(state: AppState, ranked: List<Node>): String = buildString {
     appendLine("Priorities — ${state.project.name}")
-    for (pick in Pick.entries) {
-        val group = byPick[pick].orEmpty().filterNot { it.id in state.privateIds }
-            .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.effort })
-        if (group.isEmpty()) continue
-        appendLine()
-        appendLine("${pick.label} (${pick.hint})")
-        group.forEach { appendLine("- ${it.title.trim()} (importance ${it.importance}, effort ${it.effort})") }
-    }
+    ranked.filterNot { it.id in state.privateIds }.forEach { appendLine("- ${it.title.trim()} (importance ${it.importance})") }
 }.trimEnd()
 
 // ---- Wins ----

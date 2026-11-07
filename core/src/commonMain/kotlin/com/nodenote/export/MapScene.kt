@@ -10,7 +10,6 @@ import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.Project
 import com.nodenote.model.edgeType
-import com.nodenote.model.effortArgb
 import com.nodenote.model.importanceArgb
 import com.nodenote.model.nodeType
 import com.nodenote.model.privateAreaIds
@@ -91,7 +90,7 @@ class MapScene(val scene: Scene, val legendRect: MapRect?, val titleRect: MapRec
 /**
  * Turns a board into a vector [Scene] — the one drawing behind the PDF, SVG and PNG
  * exports, so all three look the same. Areas lie underneath as tinted territories with
- * their names; cards mirror the app's (type, status, private, importance and effort in
+ * their names; cards mirror the app's (type, status, private, importance in
  * the header; the WHOLE title, wrapped — a card grows to fit it even if it's cut short
  * on screen), drawn at each node's own scale and tinted by the chosen [ColorBy]. Text is
  * set in Helvetica/Arial, measured with [Helvetica] so wrapping matches every viewer.
@@ -241,15 +240,6 @@ object MapSceneBuilder {
             // Header, right side first: ratings, status, private marker; the type label gets what's left.
             val headerMid = PAD_TOP + HEADER / 2f
             var right = baseWidth - PAD_X
-            if (node.effort > 0) {
-                val label = "E${node.effort}"
-                val w = Helvetica.width(label, 8.5f, bold = true) + 6f
-                right -= w
-                val c = effortColor(node.effort)
-                out += SceneRect(x(right), y(headerMid - 7.5f), w * s, 15f * s, radius = 4f * s, stroke = withAlpha(c, 0.8f), strokeWidth = s)
-                out += SceneText(x(right + w / 2f), y(baseline(headerMid, 8.5f)), label, 8.5f * s, c, bold = true, anchor = TextAnchor.Middle)
-                right -= 3f
-            }
             if (node.importance > 0) {
                 right -= 15f
                 val c = importanceColor(node.importance)
@@ -479,10 +469,8 @@ object MapSceneBuilder {
 
     private const val PRIVATE = 0xFFE5B25B
 
-    /** Same scales as the app (ChatWidgets): importance 1–2 slate … 9–10 red, 11–12 pink; effort green → amber → violet. */
+    /** Same scales as the app (ChatWidgets): importance 1–2 slate … 9–10 red, 11–12 pink. */
     fun importanceColor(importance: Int): Long = importanceArgb(importance)
-
-    fun effortColor(effort: Int): Long = effortArgb(effort)
 
     private fun withAlpha(argb: Long, alpha: Float): Long =
         ((alpha.coerceIn(0f, 1f) * 255f).toLong() shl 24) or (argb and 0xFFFFFF)

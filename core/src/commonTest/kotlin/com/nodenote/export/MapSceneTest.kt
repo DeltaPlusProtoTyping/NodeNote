@@ -51,7 +51,7 @@ class MapSceneTest {
         val card = scene.items.filterIsInstance<SceneRect>().filter { it.radius == 10f }.maxBy { it.height }
         assertTrue(card.height > Node.DEFAULT_HEIGHT, "card height ${card.height}")
         // Ratings show up on the card.
-        assertTrue("E3" in texts(scene))
+        assertFalse("E3" in texts(scene))
         assertTrue("7" in texts(scene))
     }
 

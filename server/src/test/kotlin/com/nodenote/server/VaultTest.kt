@@ -107,7 +107,9 @@ class VaultTest {
         assertTrue(VaultMap.MARKER in map.lines().take(3), map.take(200))
         assertTrue("Label the bins" in map)
         assertFalse("Pushback" in map)
-        assertTrue("## Quick wins\n\n- [[Wins/Label the bins|Label the bins]] · importance 7, effort 2" in index, index)
+        // A value saved before Effort was retired stays in the card's note; the board note no longer ranks by it.
+        assertFalse("Quick wins" in index, index)
+        assertFalse("effort" in index.lowercase(), index)
     }
 
     @Test

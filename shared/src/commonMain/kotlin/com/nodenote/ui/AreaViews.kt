@@ -524,7 +524,7 @@ private fun QuickBarRow(modifier: Modifier, content: @Composable () -> Unit) {
 
 /**
  * "Color: Type" in the map's top-right corner: what the card colors mean (type, status,
- * importance, effort, person, or issues with no fix yet). With a lens on, its legend sits
+ * importance, person, or issues with no fix yet). With a lens on, its legend sits
  * underneath, with the way back to type.
  */
 @Composable

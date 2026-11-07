@@ -135,7 +135,6 @@ private fun BoardMenuButton(workspace: Workspace) {
                 DropdownMenuItem(text = { Text("Tidy the layout", fontSize = 12.sp) }, enabled = state.project.nodes.size > 1,
                     onClick = { close(); state.tidyLayout() })
                 DropdownMenuItem(text = { Text("Draw an area", fontSize = 12.sp) }, onClick = { close(); state.areaFromSelection() })
-                DropdownMenuItem(text = { Text("Rate cards one by one", fontSize = 12.sp) }, onClick = { close(); state.rateBoardOpen = true })
                 DropdownMenuItem(
                     text = { Text(if (state.presenting) "Stop presenting" else "Present (hide private cards)", fontSize = 12.sp) },
                     onClick = { close(); state.togglePresenting() },

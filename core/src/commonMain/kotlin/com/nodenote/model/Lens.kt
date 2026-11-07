@@ -2,15 +2,14 @@ package com.nodenote.model
 
 /**
  * What the card colors mean right now. [Type] is the everyday look; the others recolor the
- * whole map so it answers one question at a glance: what matters most, what's done, how big
- * the jobs are, who's on what, which issues still have no fix. Shared by the app and the
+ * whole map so it answers one question at a glance: what matters most, what's done,
+ * who's on what, which issues still have no fix. Shared by the app and the
  * exports, so a PDF shows the same colors as the screen.
  */
 enum class ColorBy(val label: String, val hint: String) {
     Type("Type", "the usual look: each card's type"),
     Status("Status", "open, in progress, blocked, solved"),
     Importance("Importance", "how much it matters: the hotter, the more"),
-    Effort("Effort", "how big a job: green small, violet big"),
     Person("Person", "the owner, else the first @name on the card"),
     Gaps("No fix yet", "issues with no Solves link to a fix"),
 }
@@ -26,13 +25,6 @@ fun importanceArgb(importance: Int): Long = when (importance) {
     7, 8 -> 0xFFE58E5B
     9, 10 -> 0xFFE2606B
     else -> 0xFFEC4899
-}
-
-/** Effort scale: 1–3 green (quick), 4–6 amber, 7–10 violet (a big one). */
-fun effortArgb(effort: Int): Long = when (effort) {
-    1, 2, 3 -> 0xFF53C27C
-    4, 5, 6 -> 0xFFE5B25B
-    else -> 0xFF9B7BFF
 }
 
 private val personPalette = listOf(
@@ -81,7 +73,6 @@ class Lens(val project: Project, val by: ColorBy) {
         ColorBy.Type -> null
         ColorBy.Status -> node.status.takeIf { it != NodeStatus.None }?.colorArgb
         ColorBy.Importance -> node.importance.takeIf { it > 0 }?.let(::importanceArgb)
-        ColorBy.Effort -> node.effort.takeIf { it > 0 }?.let(::effortArgb)
         ColorBy.Person -> node.person().takeIf { it.isNotEmpty() }?.let(::personColor)
         ColorBy.Gaps -> when {
             node.type != "Issue" -> null
@@ -103,9 +94,6 @@ class Lens(val project: Project, val by: ColorBy) {
             ColorBy.Importance -> listOf(11 to "11–12 urgent", 9 to "9–10 critical", 7 to "7–8", 5 to "5–6", 3 to "3–4", 1 to "1–2 minor")
                 .filter { (v, _) -> nodes.any { it.importance == v || it.importance == v + 1 } }
                 .map { (v, label) -> LensKey(label, importanceArgb(v)) } + none("Not rated")
-            ColorBy.Effort -> listOf(1 to "1–3 small job", 4 to "4–6", 7 to "7–10 big job")
-                .filter { (v, _) -> nodes.any { n -> n.effort > 0 && effortArgb(n.effort) == effortArgb(v) } }
-                .map { (v, label) -> LensKey(label, effortArgb(v)) } + none("Not rated")
             ColorBy.Person -> nodes.map { it.person() }.filter { it.isNotEmpty() }
                 .groupBy { it.lowercase() }.values.sortedByDescending { it.size }.take(MAX_PEOPLE)
                 .map { names -> LensKey(names.first(), personColor(names.first())) } + none("Nobody named")
