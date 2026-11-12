@@ -101,7 +101,7 @@ compose.desktop {
             // GitHub Actions release workflow builds each on its matching runner.
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Dmg)
             packageName = "NodeNote"
-            packageVersion = "2.1.0"
+            packageVersion = "2.2.0"
             // The trimmed runtime needs EC crypto for HTTPS (Tailscale serve certificates), and the
             // built-in server SQLite (java.sql) plus what Netty and Ktor use (suggestRuntimeModules).
             modules("jdk.crypto.ec", "java.instrument", "java.management", "java.sql", "jdk.unsupported")
