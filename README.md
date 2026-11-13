@@ -1,6 +1,6 @@
 # NodeNote — braindump boards for process improvement
 
-[![Watch the 2-minute tour](docs/images/tutorial.png)](docs/tutorial.mp4)
+[![Watch the 2-minute tour](docs/images/tutorial.png)](https://deltaplusprototyping.github.io/NodeNote/)
 
 **Download NodeNote 2.2.0:** [Windows (.msi)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.2.0/NodeNote-2.2.0.msi) ·
 [macOS (.dmg)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.2.0/NodeNote-2.2.0.dmg) · [Linux (.deb)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.2.0/nodenote_2.2.0-1_amd64.deb) ·
