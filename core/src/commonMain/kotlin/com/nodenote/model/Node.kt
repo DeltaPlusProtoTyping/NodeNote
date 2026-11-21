@@ -65,6 +65,13 @@ data class Node(
     val solvedAt: Long = 0,
     /** Card size multiplier (1 = normal, 2 = twice as big, text included). [width]/[height] already include it. */
     val scale: Float = 1f,
+    /**
+     * Solved for now: fixed, but it will need doing again (a workaround, a recurring chore). Only
+     * means something while [status] is Solved; older clients just see Solved. See [isSolvedForNow].
+     */
+    val forNow: Boolean = false,
+    /** Epoch millis when a solved-for-now card comes back for another look; 0 = no date. See [isDueAgain]. */
+    val recheckAt: Long = 0,
 ) {
     val centerX: Float get() = x + width / 2f
     val centerY: Float get() = y + height / 2f

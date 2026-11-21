@@ -302,6 +302,7 @@ fun GraphCanvas(state: AppState, modifier: Modifier = Modifier) {
 
         if (state.presenting) PresentingBadge(state, Modifier.align(Alignment.TopStart).padding(10.dp))
         if (state.drawingArea) DrawingAreaHint(state, Modifier.align(Alignment.TopCenter).padding(10.dp))
+        if (state.ratePass.isNotEmpty()) RatePassBar(state, Modifier.align(Alignment.TopCenter).padding(10.dp))
 
         if (state.project.nodes.isEmpty() && state.project.elements.isEmpty() && state.project.areas.isEmpty()) {
             EmptyCanvasHint(Modifier.align(Alignment.Center))
@@ -329,6 +330,8 @@ private fun CanvasMenu(state: AppState, at: Offset, close: () -> Unit) {
             HorizontalDivider(color = PanelBorder)
             MenuItem("Select all", close) { state.selectAll() }
             MenuItem("Tidy the layout", close, enabled = state.project.nodes.size > 1) { state.tidyLayout() }
+            val unrated = state.unratedWork().size
+            if (unrated > 0) MenuItem("Rate the $unrated unrated cards", close) { state.startRatePass() }
             if (selected == 0) MenuItem("Draw an area", close) { state.areaFromSelection() }
             HorizontalDivider(color = PanelBorder)
             MenuItem("Undo", close, enabled = state.canUndo) { state.undo() }

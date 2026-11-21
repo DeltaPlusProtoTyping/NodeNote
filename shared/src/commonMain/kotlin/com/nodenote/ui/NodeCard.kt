@@ -71,6 +71,8 @@ import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.NodeTypeDef
 import com.nodenote.model.areaOf
+import com.nodenote.model.isDueAgain
+import com.nodenote.model.nowMillis
 import com.nodenote.state.AppState
 import com.nodenote.state.LocalAppState
 import com.nodenote.theme.Accent
@@ -85,6 +87,8 @@ import kotlin.math.roundToInt
 /** Marks private nodes (lock + label on the card, the Private chip). */
 val PrivateAmber = Color(0xFFE5B25B)
 private val DoneGreen = Color(NodeStatus.Solved.colorArgb)
+val ForNowTeal = Color(com.nodenote.model.FOR_NOW_ARGB)
+val DueOrange = Color(com.nodenote.model.DUE_AGAIN_ARGB)
 
 /**
  * One node on the canvas, rendered as a rounded card.
@@ -326,8 +330,10 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
             .onSizeChanged { contentHeight = it.height / density }
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
+        val due = node.isDueAgain(nowMillis())
+        val solved = node.status == NodeStatus.Solved && !due
         Row(verticalAlignment = Alignment.CenterVertically) {
-            DoneBox(node.status == NodeStatus.Solved) { state.toggleNodeDone(node.id) }
+            DoneBox(solved, color = if (due) DueOrange else if (node.forNow && solved) ForNowTeal else DoneGreen) { state.toggleNodeDone(node.id) }
             Spacer(Modifier.width(6.dp))
             TypeDot(typeDef.color, 7.dp)
             Spacer(Modifier.weight(1f))
@@ -345,6 +351,21 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                     letterSpacing = 0.6.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = node.status.color,
+                    maxLines = 1,
+                )
+            }
+            // Solved for now says when it comes back; once that day comes, that it's due.
+            if (node.status == NodeStatus.Solved && node.forNow) {
+                Text(
+                    when {
+                        due -> "DUE AGAIN"
+                        node.recheckAt > 0 -> "BACK ${formatShortDate(node.recheckAt).uppercase()}"
+                        else -> "FOR NOW"
+                    },
+                    fontSize = 8.sp,
+                    letterSpacing = 0.6.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (due) DueOrange else ForNowTeal,
                     maxLines = 1,
                 )
             }
@@ -366,8 +387,9 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                 node.title.ifBlank { "(untitled)" },
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (node.title.isBlank() || node.status == NodeStatus.Solved) TextFaint else TextPrimary,
-                textDecoration = if (node.status == NodeStatus.Solved) TextDecoration.LineThrough else null,
+                color = if (node.title.isBlank() || solved) TextFaint else TextPrimary,
+                // Solved for good is struck through; solved for now isn't over, so it isn't.
+                textDecoration = if (solved && !node.forNow) TextDecoration.LineThrough else null,
                 lineHeight = 16.sp,
                 maxLines = 12,
                 overflow = TextOverflow.Ellipsis,
@@ -379,23 +401,27 @@ private fun CardContent(state: AppState, node: Node, typeDef: NodeTypeDef) {
                 node.description,
                 fontSize = 10.sp,
                 color = TextSecondary,
-                maxLines = 1,
+                lineHeight = 13.sp,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
-/** The card's done box: click it to tick the card off (Solved), click again to reopen it. */
+/**
+ * The card's done box: click it to tick the card off (Solved), click again to reopen it. Teal when
+ * solved for now; an orange outline when it's due again (ticking it is done again, for now).
+ */
 @Composable
-private fun DoneBox(done: Boolean, onToggle: () -> Unit) {
+private fun DoneBox(done: Boolean, color: Color = DoneGreen, onToggle: () -> Unit) {
     val shape = RoundedCornerShape(3.dp)
     Box(
         Modifier
             .size(12.dp)
             .clip(shape)
-            .background(if (done) DoneGreen else Color.Transparent, shape)
-            .border(1.dp, if (done) DoneGreen else TextFaint, shape)
+            .background(if (done) color else Color.Transparent, shape)
+            .border(if (done || color == DoneGreen) 1.dp else 1.5.dp, if (done || color != DoneGreen) color else TextFaint, shape)
             .clickable(onClick = onToggle),
         contentAlignment = Alignment.Center,
     ) {

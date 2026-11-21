@@ -60,6 +60,16 @@ class SavedFormatTest {
            "color":4284194047,"private":true,"createdAt":1791000000000,"createdBy":"Ben"}]}
     """.trimIndent()
 
+    /** November 2026: Solved for now (forNow) with a check-again date (recheckAt). */
+    private val boardV5 = """
+        {"id":"b1","name":"Shop floor","nodes":[
+          {"id":"n1","type":"ActionItem","title":"Re-train second shift on tool offsets","description":"","x":10.0,"y":20.0,
+           "width":190.0,"height":92.0,"properties":{},"attachments":[],"status":"Solved","importance":5,"owner":"",
+           "summary":"","createdAt":1790000000000,"createdBy":"Ben","keywords":"","effort":0,
+           "private":false,"solvedAt":1791000000000,"scale":1.0,"forNow":true,"recheckAt":1798776000000}],
+         "edges":[],"elements":[],"customNodeTypes":[],"customEdgeTypes":[],"areas":[]}
+    """.trimIndent()
+
     private val messageV2 = """
         {"id":"m1","boardId":"b1","nodeId":"n1","author":"Nick","text":"see [[Spindle warm-up]]","kind":"Decision",
          "importance":9,"linkedNodeIds":["n1"],"done":false,"createdAt":1790000000000,"editedAt":0,"deleted":false,"seq":42}
@@ -116,6 +126,27 @@ class SavedFormatTest {
         // Stored as "private", like a node's flag; the card inside is private through its area.
         assertEquals(true, "\"private\":true" in ApiJson.encodeToString(Area.serializer(), a))
         assertEquals(setOf("n1"), p.privateNodeIds())
+    }
+
+    @Test
+    fun boardsFromBeforeSolvedForNowAreSolvedForGood() {
+        val n = ApiJson.decodeFromString(Project.serializer(), boardV3).nodes.single()
+        assertEquals(NodeStatus.Solved, n.status)
+        assertEquals(false, n.forNow)
+        assertEquals(0L, n.recheckAt)
+        assertEquals(false, n.isSolvedForNow)
+    }
+
+    @Test
+    fun boardsWithSolvedForNowLoad() {
+        val n = ApiJson.decodeFromString(Project.serializer(), boardV5).nodes.single()
+        assertEquals(NodeStatus.Solved, n.status)
+        assertEquals(true, n.isSolvedForNow)
+        assertEquals(1798776000000L, n.recheckAt)
+        assertEquals(false, n.isDueAgain(1795000000000L))
+        assertEquals(true, n.isDueAgain(1798776000000L))
+        assertEquals("Due again", n.statusLabel(1799000000000L))
+        assertEquals(1798776000000L - 1791000000000L, n.recheckInterval)
     }
 
     @Test

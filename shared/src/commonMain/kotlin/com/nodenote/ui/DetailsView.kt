@@ -46,6 +46,8 @@ import com.nodenote.model.AttachmentKind
 import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
 import com.nodenote.model.attachmentKindForFileName
+import com.nodenote.model.isDueAgain
+import com.nodenote.model.nowMillis
 import com.nodenote.model.formatByteSize
 import com.nodenote.model.newId
 import com.nodenote.state.AppState
@@ -130,10 +132,26 @@ private fun NodeEditor(state: AppState, node: Node) {
         modifier = Modifier.fillMaxWidth(),
     )
 
-    FieldLabel(if (node.status == NodeStatus.Solved && node.solvedAt > 0) "Status — solved ${formatDay(node.solvedAt)}" else "Status")
+    val forNow = node.status == NodeStatus.Solved && node.forNow
+    FieldLabel(
+        when {
+            node.isDueAgain(nowMillis()) -> "Status — due again since ${formatDay(node.recheckAt)}"
+            forNow && node.recheckAt > 0 -> "Status — solved for now ${formatDay(node.solvedAt)}, back ${formatDay(node.recheckAt)}"
+            forNow -> "Status — solved for now ${formatDay(node.solvedAt)}"
+            node.status == NodeStatus.Solved && node.solvedAt > 0 -> "Status — solved ${formatDay(node.solvedAt)}"
+            else -> "Status"
+        },
+    )
+    var forNowOpen by remember { mutableStateOf(false) }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         NodeStatus.entries.forEach { s ->
-            StatusPill(s, filled = node.status == s, onClick = { state.setNodeStatus(node.id, s) })
+            StatusPill(s, filled = node.status == s && !(forNow && s == NodeStatus.Solved), onClick = { state.setNodeStatus(node.id, s) })
+            if (s == NodeStatus.Solved) {
+                Box {
+                    Pill("Solved for now", ForNowTeal, filled = forNow, onClick = { forNowOpen = true })
+                    SolvedForNowMenu(state, node, expanded = forNowOpen, onDismiss = { forNowOpen = false })
+                }
+            }
         }
     }
 

@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.model.Message
 import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
+import com.nodenote.model.statusLabel
 import com.nodenote.model.resolveNodeLinks
 import com.nodenote.sort.NodeMatcher
 import com.nodenote.state.AppState
@@ -153,7 +154,10 @@ private fun ChatHeader(state: AppState, node: Node?) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (node.status != com.nodenote.model.NodeStatus.None) StatusPill(node.status)
+                if (node.status != com.nodenote.model.NodeStatus.None) {
+                    val now = com.nodenote.model.nowMillis()
+                    Pill(node.statusLabel(now), statusColorOf(node, now))
+                }
                 Spacer(Modifier.width(4.dp))
                 ImportanceBadge(node.importance)
             } else {

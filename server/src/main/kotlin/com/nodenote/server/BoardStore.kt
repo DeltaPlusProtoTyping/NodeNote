@@ -16,6 +16,7 @@ import com.nodenote.api.PatchRequest
 import com.nodenote.api.PatchResponse
 import com.nodenote.api.SyncResponse
 import com.nodenote.model.Message
+import com.nodenote.model.Node
 import com.nodenote.model.Project
 import com.nodenote.model.applyPatch
 import com.nodenote.model.clampImportance
@@ -236,7 +237,9 @@ class BoardStore(
         if (author.isBlank()) return
         val old = before.nodes.associateBy { it.id }
         val added = patch.upsertNodes.count { it.id !in old }
-        val changed = patch.upsertNodes.count { it.id in old && old[it.id] != it } + (if (patch.name != null) 1 else 0)
+        // Only what a card says counts: moves, and the heights a client fits to the text, aren't edits.
+        val changed = patch.upsertNodes.count { n -> old[n.id]?.let { it.withoutLayout() != n.withoutLayout() } == true } +
+            (if (patch.name != null) 1 else 0)
         val removed = patch.deleteNodes.count { it in old }
         val edgeIds = before.edges.mapTo(HashSet()) { it.id }
         val linked = patch.upsertEdges.count { it.id !in edgeIds }
@@ -253,6 +256,8 @@ class BoardStore(
             openActivity[key] = row.copy(id = rowId)
         }
     }
+
+    private fun Node.withoutLayout(): Node = copy(x = 0f, y = 0f, width = 0f, height = 0f, scale = 1f)
 
     /** Who is on the server and the newest [limit] things they did, edits and chats together. */
     suspend fun activity(people: List<Database.PersonRow>, limit: Int = 40): Activity {

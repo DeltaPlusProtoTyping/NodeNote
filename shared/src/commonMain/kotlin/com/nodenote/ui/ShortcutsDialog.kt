@@ -47,6 +47,7 @@ private val shortcutGroups = listOf(
         "Escape" to "Drop the new node you're naming",
         "Empty Enter in a typed-out branch" to "Stop (the empty next node goes away)",
         "F2" to "Rename the selected node",
+        "1-9, 0" to "Rate the selected cards 1-9, 0 for 10 (the size follows)",
         "Drag the card's corner" to "Bigger or smaller = more or less important (1-12)",
         "Ctrl + G" to "Area around the selected cards (none selected: drag a box)",
         "Drag an area's name or border" to "Move the area with everything in it",

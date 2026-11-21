@@ -20,6 +20,14 @@ import com.nodenote.model.ElementKind
 import com.nodenote.model.ExportPreset
 import com.nodenote.model.ExportSettings
 import com.nodenote.model.Lens
+import com.nodenote.model.MILLIS_PER_DAY
+import com.nodenote.model.TitleSplit
+import com.nodenote.model.isDueAgain
+import com.nodenote.model.isOpenWork
+import com.nodenote.model.isSolvedForNow
+import com.nodenote.model.recheckInterval
+import com.nodenote.model.splitLongTitle
+import com.nodenote.ui.formatDay
 import com.nodenote.model.Message
 import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
@@ -849,6 +857,12 @@ class AppState(val session: Session) {
             return
         }
         if (title != node.title) updateNode(nodeId) { it.copy(title = title) }
+        // A second sentence typed into a title is notes: the card keeps the first, its description the rest.
+        if (title != originalTitle.trim()) splitLongTitle(title, sentenceOnly = true)?.let { split ->
+            pushUndo()
+            moveRestToDescription(nodeId, split)
+            status = "Kept the title short; the rest is in the card's description (Ctrl+Z puts it back)"
+        }
         when (end) {
             TitleEditEnd.Enter -> if (fresh && parentId != null) addChildNode(parentId, node.type, continuation = true)
             TitleEditEnd.Tab -> addChildNode(nodeId, continuation = true)
@@ -883,10 +897,13 @@ class AppState(val session: Session) {
         lastNodeType = typeId
     }
 
-    /** Status change, keeping [Node.solvedAt] in step — it dates the Wins list. */
+    /**
+     * Status change, keeping [Node.solvedAt] in step — it dates the Wins list. Plain Solved is solved
+     * for good: a solved-for-now card set to Solved stops coming back.
+     */
     fun setNodeStatus(id: String, status: NodeStatus) {
         val node = project.nodes.find { it.id == id } ?: return
-        if (node.status == status) return
+        if (node.status == status && !node.isSolvedForNow) return
         pushUndo()
         updateNode(id) {
             it.copy(
@@ -896,9 +913,25 @@ class AppState(val session: Session) {
                     it.solvedAt > 0 -> it.solvedAt
                     else -> nowMillis()
                 },
+                forNow = false,
+                recheckAt = 0L,
             )
         }
         if (status == NodeStatus.Solved) this.status = "Solved: \"${node.title}\" is on the Wins list"
+    }
+
+    /**
+     * Solved for now: fixed, but it will need doing again. After [days] (0 = no date) it comes
+     * back as Due again. Solving a card that's due again starts its wait over from today.
+     */
+    fun solveForNow(id: String, days: Int) {
+        val node = project.nodes.find { it.id == id } ?: return
+        pushUndo()
+        val now = nowMillis()
+        val recheck = if (days > 0) now + days * MILLIS_PER_DAY else 0L
+        updateNode(id) { it.copy(status = NodeStatus.Solved, solvedAt = now, forNow = true, recheckAt = recheck) }
+        status = if (recheck > 0) "Solved for now: \"${node.title}\" comes back ${formatDay(recheck)}"
+        else "Solved for now: \"${node.title}\" is on the Wins list"
     }
 
     /** Assigns a card to someone ("" = nobody); one undo step. */
@@ -926,10 +959,17 @@ class AppState(val session: Session) {
         }
     }
 
-    /** The card's done box: ticks it off (Solved), or reopens a solved card. */
+    /**
+     * The card's done box: ticks it off (Solved), or reopens a solved card. A card that's due again
+     * is done again for now, coming back after the same wait as last time.
+     */
     fun toggleNodeDone(id: String) {
         val node = project.nodes.find { it.id == id } ?: return
-        setNodeStatus(id, if (node.status == NodeStatus.Solved) NodeStatus.Open else NodeStatus.Solved)
+        when {
+            node.isDueAgain(nowMillis()) -> solveForNow(id, ((node.recheckInterval + MILLIS_PER_DAY / 2) / MILLIS_PER_DAY).toInt())
+            node.status == NodeStatus.Solved -> setNodeStatus(id, NodeStatus.Open)
+            else -> setNodeStatus(id, NodeStatus.Solved)
+        }
     }
 
     /** Rates a card; its size follows (growing or shrinking around its centre). */
@@ -937,6 +977,85 @@ class AppState(val session: Session) {
         val v = clampImportance(value)
         pushUndo()
         updateNode(id) { it.copy(importance = v).scaledAroundCenter(scaleForImportance(v)) }
+    }
+
+    /** A number key (1-9, 0 = 10) on the selection: rates every selected card as one undo step. During a rate pass, moves on. */
+    fun rateSelected(value: Int) {
+        val ids = selectedNodeIds.filter { id -> project.nodes.any { it.id == id } }
+        if (ids.isEmpty()) return
+        val v = clampImportance(value)
+        pushUndo()
+        project = project.copy(nodes = project.nodes.map { if (it.id in ids) it.copy(importance = v).scaledAroundCenter(scaleForImportance(v)) else it })
+        status = if (ids.size == 1) "Importance $v" else "Rated ${ids.size} cards $v"
+        if (ratePass.isNotEmpty() && ratePass.first() in ids) nextInRatePass()
+    }
+
+    // ---- Rate pass: the unrated cards one at a time ----
+
+    /** Cards still to rate in this pass, the current one first; empty when no pass is running. */
+    var ratePass by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    /** How many cards the pass started with (for "3 of 40"). */
+    var ratePassTotal by mutableStateOf(0)
+        private set
+
+    /** Unrated open work, top to bottom and left to right, so neighbours come one after another. */
+    fun unratedWork(): List<Node> = shownProject.nodes
+        .filter { it.importance == 0 && it.isOpenWork && it.type in RATABLE_TYPES && it.id !in hiddenNodeIds }
+        .sortedWith(compareBy<Node> { (it.y / 200f).toInt() }.thenBy { it.x })
+
+    /** Starts stepping through the unrated cards: each is centred and selected; number keys rate it. */
+    fun startRatePass() {
+        val ids = unratedWork().map { it.id }
+        if (ids.isEmpty()) {
+            status = "Every open card has an importance"
+            return
+        }
+        ratePass = ids
+        ratePassTotal = ids.size
+        showForRating(ids.first())
+    }
+
+    /** Centres a card for the rate pass, zoomed in far enough to read it. */
+    private fun showForRating(id: String) {
+        if (zoom < RATE_PASS_ZOOM) zoom = RATE_PASS_ZOOM
+        focusNode(id)
+    }
+
+    /** Leaves the current card as it is and goes to the next one still unrated. */
+    fun nextInRatePass() {
+        val rest = ratePass.drop(1).filter { id -> project.nodes.any { it.id == id && it.importance == 0 } }
+        ratePass = rest
+        if (rest.isEmpty()) {
+            endRatePass()
+            status = "Rate pass done"
+        } else {
+            showForRating(rest.first())
+        }
+    }
+
+    fun endRatePass() {
+        ratePass = emptyList()
+        ratePassTotal = 0
+    }
+
+    // ---- Long titles ----
+
+    /** Cuts [nodeId]'s long title at its first break; the rest goes to the front of its description. */
+    fun shortenTitle(nodeId: String) {
+        val node = project.nodes.find { it.id == nodeId } ?: return
+        val split = splitLongTitle(node.title) ?: return
+        pushUndo()
+        moveRestToDescription(nodeId, split)
+        status = "Shortened the title; the rest is in the card's description"
+    }
+
+    private fun moveRestToDescription(nodeId: String, split: TitleSplit) {
+        titleEditedLocally(nodeId)
+        updateNode(nodeId) {
+            it.copy(title = split.title, description = if (it.description.isBlank()) split.rest else split.rest + "\n" + it.description)
+        }
     }
 
     fun setNodePrivate(id: String, private: Boolean) {
@@ -1658,7 +1777,7 @@ class AppState(val session: Session) {
         get() {
             val p = project
             lensCache?.let { if (it.project === p && it.by == colorBy) return it }
-            return Lens(p, colorBy).also { lensCache = it }
+            return Lens(p, colorBy, nowMillis()).also { lensCache = it }
         }
 
     // ---- Chat ----
@@ -2168,8 +2287,14 @@ class AppState(val session: Session) {
         /** Longest title a shared text's first line becomes (the rest goes to the chat). */
         private const val SHARED_TITLE_MAX = 80
 
-        /** Node types that start life with status Open. */
-        private val OPEN_BY_DEFAULT = setOf("Issue", "Improvement", "ActionItem")
+        /** Node types that start life with status Open: the work types (not topics, goals or things on the floor). */
+        private val OPEN_BY_DEFAULT = setOf("Issue", "Improvement", "ActionItem", "Project", "Idea", "Question", "Decision")
+
+        /** The least zoom the rate pass shows a card at, so its title reads. */
+        private const val RATE_PASS_ZOOM = 0.9f
+
+        /** Types the rate pass asks about: work, and the topics it hangs off. */
+        private val RATABLE_TYPES = OPEN_BY_DEFAULT + "Topic"
     }
 }
 

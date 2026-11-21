@@ -189,6 +189,9 @@ fun dayKey(ms: Long): Int = local(ms).date.toEpochDays()
 /** "Oct 2, 2026" — a date that stays meaningful in a file someone opens later. */
 fun formatDate(ms: Long): String = local(ms).date.let { "${monthNames[it.monthNumber - 1]} ${it.dayOfMonth}, ${it.year}" }
 
+/** "Dec 12" — a date in the next year or so, short enough for a card. */
+fun formatShortDate(ms: Long): String = local(ms).date.let { "${monthNames[it.monthNumber - 1]} ${it.dayOfMonth}" }
+
 /** "Sep 28 14:03" — compact stamp for lists that mix days. */
 fun formatStamp(ms: Long): String = local(ms).let { "${monthNames[it.monthNumber - 1]} ${it.dayOfMonth} ${two(it.hour)}:${two(it.minute)}" }
 

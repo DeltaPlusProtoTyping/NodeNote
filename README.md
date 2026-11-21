@@ -36,13 +36,14 @@ from the browser (*Add to Home Screen*) to open like an app, offline too.
 | **Node** | A topic on the board: Issue, Improvement, Idea, Decision, Action, Project, Machine, Process, Tooling, Customer, Quote… Has a **status** (Open → In progress → Blocked → Solved / Parked), **importance** 1–12 (1 minor … 10 critical, 11–12 urgent), **owner**, and a **summary** of where it stands. The card shows the whole title and grows to fit it. **A card's size is its importance**: rate it and it grows or shrinks; pick a size (Small 1, Normal 3, Large 7, Huge 10, Urgent 12) or drag its bottom-right corner and that sets its importance. |
 | **Mapping** | Select a node: **Tab** adds a child (placed on the side away from the goal, ready to type), **Enter** a sibling. While typing a new node's title, Enter starts the next sibling and Tab a child of it, so a branch can be typed out without the mouse. Click away from a new card and it stays, called "New Issue" (or whatever its type is) until you rename it; Escape drops it. The bar above the selected card sets type, status, rating, Private and size. **Tidy** lays out just the selected area (or the selected cards) around their hub and leaves the rest of the map where you put it; on a board without areas, a second click lays out the whole map around the goal (undo puts it back). |
 | **Areas** | Named territories behind groups of cards (*Lead time*, *Sales pipeline*): select cards and press **Area** (`Ctrl+G`), use *+ Area* on a card's bar (the card and its children, named after it), or press Area with nothing selected and drag a box. A card belongs to the area it sits in, so dragging it in or out is all it takes; dragging an area's **name** or **border** moves the area with everything in it, and the grips on its corners and side middles resize it. Click the name or border for its bar: rename, color, Private (hides the whole area and its cards when presenting), fit to cards, tidy inside, remove (the cards stay). Zoomed far out, cards step back and the area names show big. |
-| **Links** | Click a link on the map to say what it means: *Relates*, *Causes*, *Solves*, *Blocks*, *Part of* (or flip or delete it). Typed links get an arrow and their color. |
+| **Links** | Click a link on the map to say what it means (*Relates*, *Causes*, *Solves*, *Blocks*, *Part of*… in one menu), flip it or delete it. Typed links get an arrow and their color. |
 | **Color by** | The *Color:* switch in the map's top-right corner recolors every card by **status**, **importance**, **person** (owner, else the first @name) or **No fix yet** (Issues with no *Solves* link: red; a fix on the map: amber; solved: green). A legend explains the colors; exports use the same colors. |
 | **Chat** | Select a node → its thread opens on the right. Messages have a **kind** (Note, Issue, Idea, Decision, Action, Fix) and an optional **importance 1–12**. Actions get a done checkbox. |
 | **Links across nodes** | Type `[[` in a message to link another node. The message then also shows in that node's chat ("mentioned in"), and the link is clickable. |
 | **Dump & sort** | With nothing selected, the chat box is a dump bar: type a thought and press Enter, and it goes to **Unsorted**. As you type it suggests where the thought belongs; tap one to file it there directly. The **Sort** tab works through the Unsorted pile: each thought gets its best-matching nodes (with their parent branch) as one-tap chips, plus *Other node…* and *New node under…*, which hangs a new node off the right branch. Nothing is filed automatically. Matching is keyword relevance over titles, the node **Keywords** field, descriptions and everything already filed under each node, so it improves as you sort. |
 | **Board feed** | Nothing selected = every message on the board, tagged with its node; filter by importance (5+/7+/9+/11+), kind, or text. |
-| **Priorities** | *Open work*: most important first, plus what still needs rating. *Wins*: every Solved node with the date it was solved — copy the list for an email. *Key details*: messages rated at/above a threshold. |
+| **Priorities** | *Open work*: what's due again first, then most important first, plus what still needs rating (*Rate them one by one* steps through those cards on the map; number keys 1–9, 0 for 10, rate the selected cards any time). *Wins*: every Solved node with the date it was solved — copy the list for an email. *Key details*: messages rated at/above a threshold. |
+| **Solved for now** | For fixes that won't stay fixed (a workaround, a chore that comes round again): *Status → Solved for now…* and pick when to check it again (a week … a year, or no date). The card goes teal and says when it's back; on that day it turns orange as **Due again**, tops Open work and the vault Digest, and ticking its box solves it again for the same stretch. Plain *Solved* is solved for good. |
 | **Private & presenting** | Mark a node or a whole area **Private** (the lock). **Present** hides private nodes (and everything in a private area), their links and their chat everywhere on that screen until you stop; exports leave them out unless you tick *Include private nodes and areas*. |
 | **People** | Type `@Kurt` in a title or message. Everyone named gets a chip above the node list; clicking it shows every node and message that mentions them (with or without the @). |
 | **Spelling** | Titles and messages get red squiggles under typos; the bar above a selected node offers the fix, and the node list's *Typos* filter fixes them in one click each. |
@@ -172,6 +173,8 @@ change things in the app. Every note carries `nodenote: generated` in its frontm
 
 ```
 <vault>/Boards.md                   index of all boards
+<vault>/Digest.md                   across boards: due again, most important open work, coming back
+                                    soon, what still needs rating, solved this week (hourly too)
 <vault>/<Board>/<Board>.md          open work table, all nodes by type, key details, recent activity
 <vault>/<Board>/<Node title>.md     frontmatter (type, status, importance, owner, counts, tags),
                                     summary, connections, key details, action items, the full chat
@@ -185,6 +188,11 @@ private area); the board note shows the map, lists the areas with their cards, o
 
 Frontmatter makes the notes queryable with Obsidian Bases/Dataview (e.g. every open Issue with
 importance ≥ 7 across boards).
+
+**Capture from Obsidian:** `<vault>/Capture.md` is yours to write in (the server creates it once and
+never changes it). Each new line lands in Unsorted on the board changed most recently, or, under a
+heading with a board's name (`## Shop floor`), on that board, about a minute after you stop typing.
+A line is sent once (remembered in `<data>/capture-sent.txt`); clear the note whenever.
 
 ## Your data survives updates
 

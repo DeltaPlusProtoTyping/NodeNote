@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -424,10 +425,10 @@ fun AreaQuickBarOverlay(state: AppState, area: Area) {
     }
 }
 
-/** Link types offered first on the link bar: what a connection between two cards usually means. */
+/** Link types listed first in the link bar's menu: what a connection between two cards usually means. */
 private val QuickLinkTypes = listOf("Relates", "Causes", "Solves", "Blocks", "PartOf")
 
-/** The clicked link's toolbar, at its midpoint: what the link means, flip it, delete it. */
+/** The clicked link's toolbar, at its midpoint: what the link means (one menu), flip it, delete it. */
 @Composable
 fun LinkQuickBarOverlay(state: AppState, edge: Edge) {
     val p = state.shownProject
@@ -457,23 +458,19 @@ fun LinkQuickBarOverlay(state: AppState, edge: Edge) {
             maxLines = 1,
             modifier = Modifier.padding(horizontal = 6.dp),
         )
-        QuickLinkTypes.forEach { id ->
-            val def = state.edgeTypeOf(id)
-            val current = edge.type == id
-            BarChip(onClick = { state.setLinkType(edge.id, id) }, highlight = if (current) def.color else null) {
+        Box {
+            val def = state.edgeTypeOf(edge.type)
+            BarChip(onClick = { moreOpen = true }) {
                 TypeDot(def.color, 7.dp)
                 Spacer(Modifier.width(4.dp))
-                Text(def.label, fontSize = 11.sp, color = if (current) TextPrimary else TextSecondary, maxLines = 1)
-            }
-        }
-        Box {
-            BarChip(onClick = { moreOpen = true }, highlight = if (edge.type !in QuickLinkTypes) state.edgeTypeOf(edge.type).color else null) {
-                Text(if (edge.type in QuickLinkTypes) "More" else state.edgeTypeOf(edge.type).label, fontSize = 11.sp, color = TextSecondary)
+                Text(def.label, fontSize = 11.sp, color = TextPrimary, maxLines = 1)
                 Spacer(Modifier.width(3.dp))
                 GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
             }
             DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
-                state.allEdgeTypes.filter { it.id !in QuickLinkTypes }.forEach { t ->
+                val quick = QuickLinkTypes.map { state.edgeTypeOf(it) }
+                (quick + state.allEdgeTypes.filter { it.id !in QuickLinkTypes }).forEachIndexed { i, t ->
+                    if (i == quick.size) HorizontalDivider(color = PanelBorder)
                     DropdownMenuItem(
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {

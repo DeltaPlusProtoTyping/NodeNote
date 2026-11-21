@@ -37,7 +37,10 @@ import com.nodenote.model.Message
 import com.nodenote.model.MessageKind
 import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
+import com.nodenote.model.isDueAgain
 import com.nodenote.model.isOpenWork
+import com.nodenote.model.nowMillis
+import com.nodenote.model.statusLabel
 import com.nodenote.state.AppState
 import com.nodenote.theme.Accent
 import com.nodenote.theme.PanelBorder
@@ -83,6 +86,9 @@ private fun openWork(state: AppState): List<Node> = state.shownProject.nodes.fil
 private fun OpenWorkView(state: AppState, modifier: Modifier) {
     val (rated, unrated) = openWork(state).partition { it.importance > 0 }
     val ranked = rated.sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.title.lowercase() })
+    val now = nowMillis()
+    val dueAgain = state.shownProject.nodes.filter { it.isDueAgain(now) }
+        .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.recheckAt })
     val clipboard = LocalClipboardManager.current
 
     Column(modifier) {
@@ -97,9 +103,19 @@ private fun OpenWorkView(state: AppState, modifier: Modifier) {
         }
         HorizontalDivider(color = PanelBorder)
         LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            if (dueAgain.isNotEmpty()) {
+                item(key = "h-due") { GroupHeader("Due again", "solved for now, and that day has come: tick it when it's done again", dueAgain.size, DueOrange) }
+                items(dueAgain, key = { "due-" + it.id }) { PriorityRow(state, it) }
+                if (ranked.isNotEmpty()) item(key = "h-ranked") { GroupHeader("Open work", "most important first", ranked.size, TextSecondary) }
+            }
             items(ranked, key = { it.id }) { PriorityRow(state, it) }
             if (unrated.isNotEmpty()) {
-                item(key = "h-unrated") { GroupHeader("Not rated", "give each an importance to rank it", unrated.size, TextSecondary) }
+                item(key = "h-unrated") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { GroupHeader("Not rated", "give each an importance to rank it", unrated.size, TextSecondary) }
+                        CompactOutlinedButton("Rate them one by one", onClick = { state.startRatePass() }, modifier = Modifier.padding(end = 12.dp))
+                    }
+                }
                 items(unrated.sortedBy { it.title.lowercase() }, key = { it.id }) { PriorityRow(state, it) }
             }
             if (ranked.isEmpty() && unrated.isEmpty()) {
@@ -155,7 +171,7 @@ private fun PriorityRow(state: AppState, node: Node, trailing: (@Composable () -
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(state.nodeTypeOf(node.type).label, fontSize = 10.sp, color = TextFaint)
-                if (node.status != NodeStatus.None) Text(" · ${node.status.label}", fontSize = 10.sp, color = node.status.color)
+                if (node.status != NodeStatus.None) Text(" · ${node.statusLabel(nowMillis())}", fontSize = 10.sp, color = statusColorOf(node, nowMillis()))
                 state.parentOf(node.id)?.let { p ->
                     Text(" · in ${p.title.ifBlank { "(untitled)" }}", fontSize = 10.sp, color = TextFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -234,6 +250,7 @@ private fun WinsView(state: AppState, modifier: Modifier) {
                                 fontSize = 11.sp,
                                 color = NodeStatus.Solved.color,
                             )
+                            if (node.forNow) Text("for now", fontSize = 9.sp, color = ForNowTeal)
                             if (node.id in state.privateIds) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     GlyphIcon(Glyph.Lock, PrivateAmber, 9.dp)
@@ -253,7 +270,7 @@ private fun winsText(state: AppState, wins: List<Node>): String = buildString {
     appendLine("Wins — ${state.project.name}")
     for (n in wins.filterNot { it.id in state.privateIds }) {
         val day = if (n.solvedAt > 0) formatStamp(n.solvedAt).substringBeforeLast(' ') else "Solved"
-        appendLine("- $day: ${n.title.trim()} (${state.nodeTypeOf(n.type).label})")
+        appendLine("- $day: ${n.title.trim()} (${state.nodeTypeOf(n.type).label}${if (n.forNow) ", for now" else ""})")
     }
 }.trimEnd()
 

@@ -10,8 +10,12 @@ import com.nodenote.model.NodeStatus
 import com.nodenote.model.Project
 import com.nodenote.model.areaOf
 import com.nodenote.model.edgeType
+import com.nodenote.model.isDueAgain
+import com.nodenote.model.isOpenWork
+import com.nodenote.model.isSolvedForNow
 import com.nodenote.model.nodeType
 import com.nodenote.model.privateNodeIds
+import com.nodenote.model.statusLabel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -33,6 +37,8 @@ data class VaultEntry(val summary: BoardSummary, val vaultFolder: String?)
 object VaultNames {
     const val INBOX = "Inbox"
     const val BOARDS_INDEX = "Boards"
+    /** The generated roll-up of every board at the vault root (see [MarkdownRenderer.renderDigest]). */
+    const val DIGEST = "Digest"
     const val MAX_LENGTH = 80
     private const val FALLBACK = "Untitled"
 
@@ -107,9 +113,12 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
     private val dateTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
     private val displayFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
-    /** File name (with `.md`, relative to [folder]) → content, for one board. */
-    fun renderBoard(board: VaultBoard, folder: String): Map<String, String> {
-        val ctx = BoardContext(board, folder)
+    /**
+     * File name (with `.md`, relative to [folder]) → content, for one board. [now] decides which
+     * solved-for-now cards read as due again (0 = none).
+     */
+    fun renderBoard(board: VaultBoard, folder: String, now: Long = 0L): Map<String, String> {
+        val ctx = BoardContext(board, folder, now)
         val files = LinkedHashMap<String, String>()
         files["$folder.md"] = ctx.boardIndex()
         for (node in board.project.nodes) files["${ctx.fileOf(node)}.md"] = ctx.nodeNote(node)
@@ -140,8 +149,58 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
         )
     }
 
+    /**
+     * `Digest.md` at the vault root: what needs a look across every active board. Due again, the
+     * most important open work, what comes back soon, what still needs rating, and the week's wins.
+     * Private cards are left out. [boards] pairs each board with its folder.
+     */
+    fun renderDigest(boards: List<Pair<VaultBoard, String>>, now: Long): String {
+        data class Item(val node: Node, val board: String, val link: String)
+        val items = boards.filter { !it.first.summary.archived }.flatMap { (board, folder) ->
+            val files = VaultNames.nodeFiles(board.project, folder)
+            val hidden = board.project.privateNodeIds()
+            board.project.nodes.filter { it.id !in hidden }.map { n ->
+                Item(n, board.summary.name, wikiLink("$folder/${files.getValue(n.id)}", n.title))
+            }
+        }
+        fun where(i: Item) = if (boards.size > 1) " · ${plain(i.board)}" else ""
+        val dueAgain = items.filter { it.node.isDueAgain(now) }
+            .sortedWith(compareByDescending<Item> { it.node.importance }.thenBy { it.node.recheckAt })
+            .map { "- ${it.link}${where(it)} · due since ${date(it.node.recheckAt)}" + (if (it.node.importance > 0) " · ${it.node.importance}" else "") }
+        val top = items.filter { it.node.isOpenWork && it.node.importance > 0 }
+            .sortedWith(compareByDescending<Item> { it.node.importance }.thenBy { it.node.title.lowercase() })
+            .take(DIGEST_TOP)
+            .map { "- **${it.node.importance}** ${it.link}${where(it)} · ${it.node.statusLabel(now)}" }
+        val soon = items.filter { it.node.isSolvedForNow && it.node.recheckAt > now && it.node.recheckAt <= now + DIGEST_SOON_DAYS * DAY_MS }
+            .sortedBy { it.node.recheckAt }
+            .map { "- ${date(it.node.recheckAt)} · ${it.link}${where(it)}" }
+        val unrated = items.filter { it.node.isOpenWork && it.node.importance == 0 && it.node.type in DIGEST_RATABLE }
+            .groupBy { it.board }.map { (board, list) ->
+                "- ${plain(board)}: ${list.size} open card${if (list.size == 1) "" else "s"} without an importance. " +
+                    "In the app, right-click the map: Rate the unrated cards."
+            }
+        val wins = items.filter { it.node.status == NodeStatus.Solved && it.node.solvedAt > now - 7 * DAY_MS }
+            .sortedByDescending { it.node.solvedAt }
+            .map { "- ${date(it.node.solvedAt)} · ${it.link}${where(it)}" + (if (it.node.forNow) " · for now" else "") }
+        val fm = Frontmatter()
+            .raw("updated", date(now))
+            .raw("due_again", dueAgain.size)
+            .tags(listOf("nodenote", "nodenote-digest"))
+        return document(
+            fm,
+            "# Digest",
+            "_What needs a look across the boards, rewritten by the NodeNote server as things change._",
+            section("Due again", dueAgain),
+            section("Most important open work", top),
+            section("Coming back in the next $DIGEST_SOON_DAYS days", soon),
+            section("Not rated yet", unrated),
+            section("Solved this week", wins),
+            if (listOf(dueAgain, top, soon, unrated, wins).all { it.isEmpty() }) "_Nothing needs a look right now._" else null,
+        )
+    }
+
     /** Per-board state shared by all of that board's notes. */
-    private inner class BoardContext(board: VaultBoard, private val folder: String) {
+    private inner class BoardContext(board: VaultBoard, private val folder: String, private val now: Long) {
         private val summary = board.summary
         private val project = board.project
         private val files = VaultNames.nodeFiles(project, folder)
@@ -182,7 +241,8 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .str("board", project.name)
                 .str("node_id", node.id)
                 .str("type", project.nodeType(node.type).label)
-                .apply { if (node.status != NodeStatus.None) raw("status", yamlScalar(node.status.label)) }
+                .apply { if (node.status != NodeStatus.None) raw("status", yamlScalar(node.statusLabel(now))) }
+                .apply { if (node.isSolvedForNow && node.recheckAt > 0) raw("recheck", date(node.recheckAt)) }
                 .apply { if (node.importance > 0) raw("importance", node.importance) }
                 .apply { if (node.effort > 0) raw("effort", node.effort) }
                 .apply { if (node.solvedAt > 0) raw("solved", date(node.solvedAt)) }
@@ -260,7 +320,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .raw("open", summary.openCount)
                 .tags(listOf("nodenote", "nodenote-board"))
 
-            val open = project.nodes.filter { it.status.isActive }
+            val open = project.nodes.filter { it.status.isActive || it.isDueAgain(now) }
                 .sortedWith(compareByDescending<Node> { it.importance }.thenBy { it.title.lowercase() })
             val openTable = open.takeIf { it.isNotEmpty() }?.let { nodes ->
                 buildString {
@@ -269,7 +329,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                     append("|---|---|---|---:|---|---:|\n")
                     for (n in nodes) {
                         val importance = if (n.importance > 0) n.importance.toString() else ""
-                        append("| ${link(n, inTable = true)} | ${plain(project.nodeType(n.type).label)} | ${n.status.label} ")
+                        append("| ${link(n, inTable = true)} | ${plain(project.nodeType(n.type).label)} | ${n.statusLabel(now)} ")
                         append("| $importance | ${plain(n.owner)} | ${byHome[n.id].orEmpty().size} |\n")
                     }
                 }.trimEnd()
@@ -280,7 +340,7 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 "## All nodes\n\n" + groups.entries.joinToString("\n\n") { (label, group) ->
                     "### ${plain(label)}\n\n" + group.sortedBy { it.title.lowercase() }.joinToString("\n") { n ->
                         val extras = buildList {
-                            if (n.status != NodeStatus.None) add(n.status.label)
+                            if (n.status != NodeStatus.None) add(n.statusLabel(now))
                             if (n.importance > 0) add("★${n.importance}")
                             if (isPrivate(n)) add("private")
                             byHome[n.id]?.size?.let { add(if (it == 1) "1 message" else "$it messages") }
@@ -298,7 +358,8 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 .sortedWith(compareByDescending<Node> { it.solvedAt }.thenBy { it.title.lowercase() })
                 .map { n ->
                     val day = if (n.solvedAt > 0) date(n.solvedAt) else "Solved"
-                    "- $day · ${link(n)} · ${plain(project.nodeType(n.type).label)}" + (if (isPrivate(n)) " · private" else "")
+                    "- $day · ${link(n)} · ${plain(project.nodeType(n.type).label)}" + (if (n.forNow) " · for now" else "") +
+                        (if (isPrivate(n)) " · private" else "")
                 }
 
             // The board's territories, top to bottom, each with the cards that live in it.
@@ -440,6 +501,11 @@ class MarkdownRenderer(private val zone: ZoneId = ZoneId.systemDefault()) {
         const val BOARD_KEY_DETAILS = 50
         const val RECENT_ACTIVITY = 30
         const val FIRST_LINE_MAX = 160
+        const val DIGEST_TOP = 10
+        const val DIGEST_SOON_DAYS = 14
+        const val DAY_MS = 24L * 60 * 60 * 1000
+        /** The work types the app's rate pass asks about. */
+        val DIGEST_RATABLE = setOf("Issue", "Improvement", "ActionItem", "Project", "Idea", "Question", "Decision", "Topic")
 
         private val Whitespace = Regex("""\s+""")
         private val MarkdownSpecial = Regex("""([\\*_\[\]|#<`])""")

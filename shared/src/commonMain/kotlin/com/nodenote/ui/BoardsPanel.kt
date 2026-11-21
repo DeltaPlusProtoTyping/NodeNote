@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.api.BoardSummary
 import com.nodenote.model.Node
 import com.nodenote.model.NodeStatus
+import com.nodenote.model.isDueAgain
+import com.nodenote.model.nowMillis
+import com.nodenote.model.statusLabel
 import com.nodenote.state.AppState
 import com.nodenote.state.Workspace
 import com.nodenote.theme.Accent
@@ -144,7 +147,7 @@ private fun BoardRow(workspace: Workspace, b: BoardSummary) {
 
 private enum class NodeSort(val label: String) { Importance("Importance"), Activity("Recent chat"), Status("Status"), Name("Name") }
 
-private enum class NodeScope(val label: String) { All("All"), Mine("Mine"), Active("Open work"), Solved("Solved"), Unread("Unread"), Typos("Typos") }
+private enum class NodeScope(val label: String) { All("All"), Mine("Mine"), Active("Open work"), DueAgain("Due again"), Solved("Solved"), Unread("Unread"), Typos("Typos") }
 
 @Composable
 private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) {
@@ -161,6 +164,7 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
                 NodeScope.All -> true
                 NodeScope.Mine -> it.owner.isNotBlank() && it.owner.equals(state.session.userName, ignoreCase = true)
                 NodeScope.Active -> it.status.isActive
+                NodeScope.DueAgain -> it.isDueAgain(nowMillis())
                 NodeScope.Solved -> it.status == NodeStatus.Solved
                 NodeScope.Unread -> (stats[it.id]?.unread ?: 0) > 0
                 NodeScope.Typos -> state.typosIn(it.title).isNotEmpty()
@@ -203,6 +207,9 @@ private fun NodeList(state: AppState, modifier: Modifier, onPicked: () -> Unit) 
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 NodeScope.entries.forEach { s ->
                     if (s == NodeScope.Typos && typoCount == 0) return@forEach
+                    // Offered once they mean something on this board.
+                    if (s == NodeScope.Mine && state.shownProject.nodes.none { it.owner.isNotBlank() }) return@forEach
+                    if (s == NodeScope.DueAgain && state.shownProject.nodes.none { it.isDueAgain(nowMillis()) }) return@forEach
                     DropdownMenuItem(
                         text = { Text(if (s == NodeScope.Typos) "Typos ($typoCount)" else s.label, fontSize = 12.sp, color = if (s == scope) Accent else TextPrimary) },
                         onClick = { scope = s; open = false },
@@ -357,9 +364,9 @@ private fun NodeRow(state: AppState, node: Node, onPicked: () -> Unit, showTypoF
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (node.status != NodeStatus.None) {
-                    Box(Modifier.size(5.dp).background(node.status.color, RoundedCornerShape(3.dp)))
+                    Box(Modifier.size(5.dp).background(statusColorOf(node, nowMillis()), RoundedCornerShape(3.dp)))
                     Spacer(Modifier.width(4.dp))
-                    Text(node.status.label, fontSize = 10.sp, color = TextSecondary)
+                    Text(node.statusLabel(nowMillis()), fontSize = 10.sp, color = TextSecondary)
                     Text(" · ", fontSize = 10.sp, color = TextFaint)
                 }
                 Text(

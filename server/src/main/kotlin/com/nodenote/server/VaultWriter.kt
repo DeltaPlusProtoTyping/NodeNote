@@ -40,6 +40,7 @@ class VaultWriter(
     private val store: BoardStore,
     private val debounceMillis: Long = 1500,
     private val renderer: MarkdownRenderer = MarkdownRenderer(),
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : AutoCloseable {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("vault-writer"))
@@ -60,8 +61,14 @@ class VaultWriter(
         }
     }
 
-    /** Regenerates every board in the background (used at startup). */
-    fun rebuildAllAsync(): Job = scope.launch { rebuildAll() }
+    /** Regenerates every board in the background (used at startup), then hourly: due-again dates pass with no edit. */
+    fun rebuildAllAsync(): Job = scope.launch {
+        rebuildAll()
+        while (true) {
+            delay(HOURLY_MILLIS)
+            rebuildAll()
+        }
+    }
 
     /** Regenerates every board now, and returns when the files are written. */
     suspend fun rebuildAll() {
@@ -104,7 +111,7 @@ class VaultWriter(
             val folder = folders.getValue(id)
             try {
                 val board = store.vaultBoard(id) ?: continue
-                writeBoard(board, folder, entry.vaultFolder, folders.values)
+                writeBoard(board, folder, entry.vaultFolder, folders.values, clock())
                 store.setVaultFolder(id, folder)
             } catch (e: CancellationException) {
                 throw e
@@ -114,15 +121,19 @@ class VaultWriter(
         }
         val index = renderer.renderBoardsIndex(entries.map { it.summary to folders.getValue(it.summary.id) })
         val indexName = "${VaultNames.BOARDS_INDEX}.md"
-        writeGenerated(vaultDir, indexName, index, markdownFiles(vaultDir)[indexName.lowercase()])
+        val rootFiles = markdownFiles(vaultDir)
+        writeGenerated(vaultDir, indexName, index, rootFiles[indexName.lowercase()])
+        val boards = entries.mapNotNull { e -> store.vaultBoard(e.summary.id)?.let { it to folders.getValue(e.summary.id) } }
+        val digestName = "${VaultNames.DIGEST}.md"
+        writeGenerated(vaultDir, digestName, renderer.renderDigest(boards, clock()), rootFiles[digestName.lowercase()])
     }
 
-    private fun writeBoard(board: VaultBoard, folder: String, previousFolder: String?, allFolders: Collection<String>) {
+    private fun writeBoard(board: VaultBoard, folder: String, previousFolder: String?, allFolders: Collection<String>, now: Long) {
         ensureExactCase(vaultDir, folder) // "shop floor" → "Shop Floor" is the same directory on Windows
         val dir = vaultDir.resolve(folder)
         Files.createDirectories(dir)
 
-        val files = renderer.renderBoard(board, folder)
+        val files = renderer.renderBoard(board, folder, now)
         val existing = markdownFiles(dir)
         var written = 0
         for ((name, content) in files) {
@@ -226,6 +237,7 @@ class VaultWriter(
     private companion object {
         val log = LoggerFactory.getLogger(VaultWriter::class.java)
         const val MARKER = "nodenote: generated"
+        const val HOURLY_MILLIS = 60L * 60 * 1000
 
         /** `.md` files directly in [dir], keyed by lower-cased name (file systems here are case-insensitive). */
         fun markdownFiles(dir: Path): Map<String, Path> {

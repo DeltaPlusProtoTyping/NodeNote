@@ -14,6 +14,14 @@ import com.nodenote.state.Workspace
 
 private val arrowKeys = setOf(Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown)
 
+/** Number keys rate the selected cards: 1-9, and 0 for 10. */
+private val ratingKeys = mapOf(
+    Key.One to 1, Key.Two to 2, Key.Three to 3, Key.Four to 4, Key.Five to 5,
+    Key.Six to 6, Key.Seven to 7, Key.Eight to 8, Key.Nine to 9, Key.Zero to 10,
+    Key.NumPad1 to 1, Key.NumPad2 to 2, Key.NumPad3 to 3, Key.NumPad4 to 4, Key.NumPad5 to 5,
+    Key.NumPad6 to 6, Key.NumPad7 to 7, Key.NumPad8 to 8, Key.NumPad9 to 9, Key.NumPad0 to 10,
+)
+
 /**
  * Keyboard shortcuts for the whole app, shared by the desktop window
  * (onPreviewKeyEvent on the Window) and the browser (on the root composable).
@@ -128,6 +136,19 @@ fun handleShortcut(workspace: Workspace, event: KeyEvent): Boolean {
         }
         event.key == Key.F2 && !typing && !inDialog && state.selectedAreaId != null -> {
             state.startRenamingArea(state.selectedAreaId!!)
+            true
+        }
+        // The rate pass: Space skips a card, Escape stops.
+        event.key == Key.Escape && !inDialog && !typing && state.ratePass.isNotEmpty() -> {
+            state.endRatePass()
+            true
+        }
+        event.key == Key.Spacebar && !inDialog && !typing && state.ratePass.isNotEmpty() -> {
+            state.nextInRatePass()
+            true
+        }
+        !ctrl && !typing && !inDialog && state.selectedNodeIds.isNotEmpty() && event.key in ratingKeys -> {
+            state.rateSelected(ratingKeys.getValue(event.key))
             true
         }
         event.key == Key.Escape && !inDialog && !typing && state.connectFromId != null -> {

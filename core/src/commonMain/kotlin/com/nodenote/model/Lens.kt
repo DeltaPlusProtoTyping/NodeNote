@@ -63,15 +63,20 @@ fun Project.fixedIssueIds(): Set<String> {
 
 /**
  * Colors cards for one [ColorBy] over one board. Build it once per board version (the
- * Gaps lens looks at the links) and ask it per card.
+ * Gaps lens looks at the links) and ask it per card. [now] (epoch millis; 0 = never) tells
+ * the Status lens which solved-for-now cards are due again.
  */
-class Lens(val project: Project, val by: ColorBy) {
+class Lens(val project: Project, val by: ColorBy, val now: Long = 0L) {
     private val fixed: Set<String> = if (by == ColorBy.Gaps) project.fixedIssueIds() else emptySet()
 
     /** The card's tint under this lens, or null to leave it as it is. */
     fun colorOf(node: Node): Long? = when (by) {
         ColorBy.Type -> null
-        ColorBy.Status -> node.status.takeIf { it != NodeStatus.None }?.colorArgb
+        ColorBy.Status -> when {
+            node.isDueAgain(now) -> DUE_AGAIN_ARGB
+            node.isSolvedForNow -> FOR_NOW_ARGB
+            else -> node.status.takeIf { it != NodeStatus.None }?.colorArgb
+        }
         ColorBy.Importance -> node.importance.takeIf { it > 0 }?.let(::importanceArgb)
         ColorBy.Person -> node.person().takeIf { it.isNotEmpty() }?.let(::personColor)
         ColorBy.Gaps -> when {
@@ -89,8 +94,17 @@ class Lens(val project: Project, val by: ColorBy) {
         fun none(label: String) = if (untinted) listOf(LensKey(label, 0)) else emptyList()
         return when (by) {
             ColorBy.Type -> emptyList()
-            ColorBy.Status -> NodeStatus.entries.filter { s -> s != NodeStatus.None && nodes.any { it.status == s } }
-                .map { LensKey(it.label, it.colorArgb) } + none("No status")
+            ColorBy.Status -> buildList {
+                for (s in NodeStatus.entries) {
+                    if (s == NodeStatus.None) continue
+                    if (nodes.any { it.status == s && colorOf(it) == s.colorArgb }) add(LensKey(s.label, s.colorArgb))
+                    if (s == NodeStatus.Solved) {
+                        if (nodes.any { colorOf(it) == FOR_NOW_ARGB }) add(LensKey("Solved for now", FOR_NOW_ARGB))
+                        if (nodes.any { colorOf(it) == DUE_AGAIN_ARGB }) add(LensKey("Due again", DUE_AGAIN_ARGB))
+                    }
+                }
+                addAll(none("No status"))
+            }
             ColorBy.Importance -> listOf(11 to "11–12 urgent", 9 to "9–10 critical", 7 to "7–8", 5 to "5–6", 3 to "3–4", 1 to "1–2 minor")
                 .filter { (v, _) -> nodes.any { it.importance == v || it.importance == v + 1 } }
                 .map { (v, label) -> LensKey(label, importanceArgb(v)) } + none("Not rated")

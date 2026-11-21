@@ -168,6 +168,13 @@ fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long =
     val vault = VaultWriter(config.vaultDir, store, vaultDebounceMillis)
     store.addListener(vault::schedule)
     vault.rebuildAllAsync()
+    // Capture.md in the vault: lines written there in Obsidian land in Unsorted, posted as whoever used the server last.
+    val capture = VaultCapture(
+        config.vaultDir.resolve("${VaultCapture.NAME}.md"),
+        config.dataDir.resolve("capture-sent.txt"),
+        store,
+        author = { accounts.people().filter { !it.groupMember }.maxByOrNull { it.lastSeen }?.name },
+    ).also { it.start() }
     // Optional, and never a reason not to start.
     val related = try {
         RelatedConfig.load(config.relatedFile)?.let { RelatedNotes(it, config.relatedIndexFile) }?.also { it.start() }
@@ -181,6 +188,7 @@ fun Application.nodeNoteModule(config: ServerConfig, vaultDebounceMillis: Long =
     }
     monitor.subscribe(ApplicationStopped) {
         vault.close()
+        capture.close()
         related?.close()
         backups.close()
         database.close()

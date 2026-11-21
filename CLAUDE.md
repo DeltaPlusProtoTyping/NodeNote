@@ -111,6 +111,16 @@ this computer; nothing is sent out.
   Size presets / corner drag set the importance, and `AppState.sizeCardsByImportance` puts a board
   in step on load. Never set `scale` without the matching importance. Effort is retired from the
   app and vault tables: `Node.effort` stays in the saved format (phone apps still send it), nothing here shows or sets it.
+- Done states: `Node.forNow` + `Node.recheckAt` (Solved for now; core `model/Priority.kt`: `isSolvedForNow`,
+  `isDueAgain(now)`, `statusLabel(now)`). Only meaningful while status is Solved, so old clients just see Solved.
+  Due again is computed, never stored; the done box on a due card re-solves it for the same interval.
+- Long titles: `core/.../model/TitleSplit.kt` (`splitLongTitle`). A second sentence typed into a title moves to
+  the description on commit (undoable); the card bar's *Shorten title* splits at any break.
+- Vault extras: `Digest.md` (generated, hourly too, `MarkdownRenderer.renderDigest`) and `Capture.md`
+  (`server/.../VaultCapture.kt`): hand-written, never modified, lines → Unsorted once quiet 60s, sent keys in
+  `<data>/capture-sent.txt`, posted as the most recently seen non-group account.
+- Activity counts content changes only (`BoardStore.recordChange` ignores x/y/size), so opening a board
+  (height fitting, sizing by importance) is no longer "changed N cards".
 - Exports: `core/.../export/MapScene.kt` builds one vector `Scene` (Helvetica metrics) that
   `SvgWriter`/`PdfWriter` write out and `MapExporter` rasterizes for PNG and the dialog preview.
   Private nodes are left out unless "Include private nodes" is ticked.

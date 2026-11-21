@@ -47,7 +47,12 @@ import androidx.compose.ui.unit.sp
 import com.nodenote.model.Node
 import com.nodenote.model.NodeCategory
 import com.nodenote.model.NodeStatus
+import com.nodenote.model.RecheckChoices
 import com.nodenote.model.areaOf
+import com.nodenote.model.isDueAgain
+import com.nodenote.model.nowMillis
+import com.nodenote.model.splitLongTitle
+import com.nodenote.model.statusLabel
 import com.nodenote.state.AppState
 import com.nodenote.theme.Accent
 import com.nodenote.theme.DangerRed
@@ -106,9 +111,25 @@ private fun NodeQuickBar(state: AppState, node: Node, modifier: Modifier = Modif
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         StatusChip(state, node)
-        AssignChip(state, node)
+        // Assigning shows on the bar once this board uses it; until then it's under "...".
+        if (usesAssigning(state, node)) AssignChip(state, node)
+        ShortenChip(state, node)
         TypoChip(state, node)
         MoreChip(state, node)
+    }
+}
+
+/** True once any card on the board has been assigned: the team features earn their place on the bar. */
+private fun usesAssigning(state: AppState, node: Node): Boolean =
+    node.owner.isNotBlank() || state.shownProject.nodes.any { it.owner.isNotBlank() }
+
+/** A long title reads as notes: one click keeps its first part and moves the rest to the description. */
+@Composable
+private fun ShortenChip(state: AppState, node: Node) {
+    val long = remember(node.title) { splitLongTitle(node.title) != null }
+    if (!long) return
+    BarChip(onClick = { state.shortenTitle(node.id) }) {
+        Text("Shorten title", fontSize = 11.sp, color = TextSecondary, maxLines = 1)
     }
 }
 
@@ -116,7 +137,6 @@ private fun NodeQuickBar(state: AppState, node: Node, modifier: Modifier = Modif
 @Composable
 private fun AssignChip(state: AppState, node: Node) {
     var open by remember { mutableStateOf(false) }
-    LaunchedEffect(state) { state.loadTeamNames() }
     Box {
         BarChip(onClick = { open = true }) {
             if (node.owner.isBlank()) {
@@ -131,34 +151,41 @@ private fun AssignChip(state: AppState, node: Node) {
             Spacer(Modifier.width(3.dp))
             GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            val me = state.session.userName
-            val people = (listOf(me) + state.teamNames + state.messages.map { it.author })
-                .filter { it.isNotBlank() }.distinctBy { it.lowercase() }
-            people.forEach { name ->
-                val current = node.owner.equals(name, ignoreCase = true)
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(8.dp).background(authorColor(name), CircleShape))
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (name.equals(me, ignoreCase = true)) "$name (me)" else name, fontSize = 12.sp,
-                                color = if (current) Accent else TextPrimary)
-                        }
-                    },
-                    onClick = { state.assignNode(node.id, name); open = false },
-                )
-            }
-            if (node.owner.isNotBlank()) {
-                HorizontalDivider(color = PanelBorder)
-                DropdownMenuItem(text = { Text("Nobody", fontSize = 12.sp, color = TextSecondary) }, onClick = { state.assignNode(node.id, ""); open = false })
-            }
+        AssignMenu(state, node, expanded = open, onDismiss = { open = false })
+    }
+}
+
+/** The people to assign [node] to: me, everyone on the server, whoever has chatted here. */
+@Composable
+private fun AssignMenu(state: AppState, node: Node, expanded: Boolean, onDismiss: () -> Unit) {
+    LaunchedEffect(state) { state.loadTeamNames() }
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        val me = state.session.userName
+        val people = (listOf(me) + state.teamNames + state.messages.map { it.author })
+            .filter { it.isNotBlank() }.distinctBy { it.lowercase() }
+        people.forEach { name ->
+            val current = node.owner.equals(name, ignoreCase = true)
+            DropdownMenuItem(
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(8.dp).background(authorColor(name), CircleShape))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (name.equals(me, ignoreCase = true)) "$name (me)" else name, fontSize = 12.sp,
+                            color = if (current) Accent else TextPrimary)
+                    }
+                },
+                onClick = { state.assignNode(node.id, name); onDismiss() },
+            )
+        }
+        if (node.owner.isNotBlank()) {
+            HorizontalDivider(color = PanelBorder)
+            DropdownMenuItem(text = { Text("Nobody", fontSize = 12.sp, color = TextSecondary) }, onClick = { state.assignNode(node.id, ""); onDismiss() })
         }
     }
 }
 
 /** Which of the "..." menus is open. */
-private enum class MoreMenu { Main, Type, Rate, Size }
+private enum class MoreMenu { Main, Type, Rate, Size, Assign }
 
 /** "..." on the card's bar: type, rating, size, private, child, area, delete. */
 @Composable
@@ -174,6 +201,7 @@ private fun MoreChip(state: AppState, node: Node) {
             MoreRow("Type: ${def.label}") { open = MoreMenu.Type }
             MoreRow(if (node.importance == 0) "Rate importance" else "Importance: ${node.importance}") { open = MoreMenu.Rate }
             MoreRow("Size") { open = MoreMenu.Size }
+            if (!usesAssigning(state, node)) MoreRow("Assign to someone") { open = MoreMenu.Assign }
             HorizontalDivider(color = PanelBorder)
             MoreRow("Add a child card  (Tab)") { close(); state.addChildNode(node.id) }
             val home = state.shownProject.areaOf(node)
@@ -195,6 +223,7 @@ private fun MoreChip(state: AppState, node: Node) {
         TypeMenu(state, node, expanded = open == MoreMenu.Type, onDismiss = close)
         RatingMenu(state, node.id, expanded = open == MoreMenu.Rate, onDismiss = close)
         SizeMenu(state, node, expanded = open == MoreMenu.Size, onDismiss = close)
+        AssignMenu(state, node, expanded = open == MoreMenu.Assign, onDismiss = close)
     }
 }
 
@@ -254,17 +283,26 @@ private fun TypeMenu(state: AppState, node: Node, expanded: Boolean, onDismiss: 
     }
 }
 
+/** The status color, with solved for now (teal) and due again (orange) told apart. */
+internal fun statusColorOf(node: Node, now: Long): Color = when {
+    node.isDueAgain(now) -> DueOrange
+    node.status == NodeStatus.Solved && node.forNow -> ForNowTeal
+    else -> node.status.color
+}
+
 @Composable
 private fun StatusChip(state: AppState, node: Node) {
     var open by remember { mutableStateOf(false) }
+    var forNowOpen by remember { mutableStateOf(false) }
+    val now = nowMillis()
     Box {
         BarChip(onClick = { open = true }) {
             if (node.status == NodeStatus.None) {
                 Text("Status", fontSize = 11.sp, color = TextSecondary)
             } else {
-                Box(Modifier.size(7.dp).background(node.status.color, RoundedCornerShape(4.dp)))
+                Box(Modifier.size(7.dp).background(statusColorOf(node, now), RoundedCornerShape(4.dp)))
                 Spacer(Modifier.width(5.dp))
-                Text(node.status.label, fontSize = 11.sp, color = TextPrimary, maxLines = 1)
+                Text(node.statusLabel(now), fontSize = 11.sp, color = TextPrimary, maxLines = 1)
             }
             Spacer(Modifier.width(3.dp))
             GlyphIcon(Glyph.ChevronDown, TextFaint, 9.dp)
@@ -274,14 +312,53 @@ private fun StatusChip(state: AppState, node: Node) {
             (everyday + listOf(NodeStatus.Parked, NodeStatus.None)).forEachIndexed { i, s ->
                 if (i == everyday.size) HorizontalDivider(color = PanelBorder)
                 DropdownMenuItem(
-                    text = { StatusPill(s, filled = s == node.status) },
+                    text = { StatusPill(s, filled = s == node.status && !(s == NodeStatus.Solved && node.forNow)) },
                     onClick = {
                         state.setNodeStatus(node.id, s)
                         open = false
                     },
                 )
+                if (s == NodeStatus.Solved) {
+                    DropdownMenuItem(
+                        text = { Pill("Solved for now...", ForNowTeal, filled = node.status == NodeStatus.Solved && node.forNow) },
+                        onClick = {
+                            open = false
+                            forNowOpen = true
+                        },
+                    )
+                }
             }
         }
+        SolvedForNowMenu(state, node, expanded = forNowOpen, onDismiss = { forNowOpen = false })
+    }
+}
+
+/** Solved for now: when it should come back for another look. */
+@Composable
+fun SolvedForNowMenu(state: AppState, node: Node, expanded: Boolean, onDismiss: () -> Unit) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        Text(
+            "Solved for now. Check it again:",
+            fontSize = 11.sp,
+            color = TextSecondary,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        )
+        RecheckChoices.forEach { (label, days) ->
+            DropdownMenuItem(
+                text = { Text(label, fontSize = 12.sp, color = TextPrimary) },
+                onClick = {
+                    state.solveForNow(node.id, days)
+                    onDismiss()
+                },
+            )
+        }
+        Text(
+            "On that day it comes back as Due again.\nTick its box when it's done again.",
+            fontSize = 10.sp,
+            color = TextFaint,
+            lineHeight = 13.sp,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+        )
     }
 }
 
