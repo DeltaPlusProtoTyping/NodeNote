@@ -2,9 +2,9 @@
 
 [![Watch the 2-minute tour](docs/images/tutorial.png)](https://deltaplusprototyping.github.io/NodeNote/)
 
-**Download NodeNote 2.2.0:** [Windows (.msi)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.2.0/NodeNote-2.2.0.msi) ·
-[macOS (.dmg)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.2.0/NodeNote-2.2.0.dmg) · [Linux (.deb)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.2.0/nodenote_2.2.0-1_amd64.deb) ·
-[Server (.zip)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.2.0/NodeNote-Server-v2.2.0.zip) · [all releases](https://github.com/DeltaPlusProtoTyping/NodeNote/releases)
+**Download NodeNote 2.3.0:** [Windows (.msi)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.3.0/NodeNote-2.3.0.msi) ·
+[macOS (.dmg)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.3.0/NodeNote-2.3.0.dmg) · [Linux (.deb)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.3.0/nodenote_2.3.0-1_amd64.deb) ·
+[Server (.zip)](https://github.com/DeltaPlusProtoTyping/NodeNote/releases/download/v2.3.0/NodeNote-Server-v2.3.0.zip) · [all releases](https://github.com/DeltaPlusProtoTyping/NodeNote/releases)
 
 A node-based workspace for mapping and improving a business. Map the shop (machines, processes,
 quoting, customers, problems) as a graph of **nodes**; every node has its own **chat**. Dump what
